@@ -5,13 +5,14 @@ import re
 # --- Configuration ---
 REPO_SEARCH_PATH = "/path/to/your/repo"  # <--- IMPORTANT: SET THIS
 MUD_REPORT_PATH = "/path/to/your/rc.diff" # <--- IMPORTANT: SET THIS
-COMPILE_ID = "12345" # Placeholder for now
+COMPILE_ID = "12345" # Placeholder
 
 # ---------------------------------------------------------------------
-# 1. CORE PARSING LOGIC (Identical to before)
+# 1. CORE PARSING LOGIC (Unchanged)
 # ---------------------------------------------------------------------
 
 def parse_report(report_path):
+    # ... (code is identical to previous version)
     all_edits = {}
     try:
         with open(report_path, 'r', encoding='utf-8') as f: report_content = f.read()
@@ -31,6 +32,7 @@ def parse_report(report_path):
     except Exception: return None
 
 def find_files_in_repo(filenames_to_find, repo_path):
+    # ... (code is identical to previous version)
     found_map, repo_file_map = {}, {}
     for root, _, files in os.walk(repo_path):
         for name in files:
@@ -45,6 +47,7 @@ def find_files_in_repo(filenames_to_find, repo_path):
     return found_map
 
 def prepare_file_data(report_data):
+    # ... (code is identical to previous version)
     if not REPO_SEARCH_PATH or not os.path.isdir(REPO_SEARCH_PATH): return []
     filenames = [os.path.basename(p) for p in report_data.keys()]
     found_files_map = find_files_in_repo(filenames, REPO_SEARCH_PATH)
@@ -62,96 +65,134 @@ def prepare_file_data(report_data):
 # 2. THE CURSES TUI APPLICATION
 # ---------------------------------------------------------------------
 
-def draw_panel(window, title):
+def draw_panel(window, title, color_pair):
     """Draws a border and title on a curses window."""
     window.erase()
     window.border()
-    window.addstr(0, 2, f" {title} ")
+    window.addstr(0, 2, f" {title} ", color_pair)
 
 def main(stdscr, file_data):
     """The main function for the curses application."""
-    # Initialization
-    curses.curs_set(0) # Hide the cursor
-    stdscr.nodelay(True) # Don't block waiting for input
-    stdscr.keypad(True) # Enable keypad mode for arrow keys etc.
-
-    # Setup Colors
+    curses.curs_set(0); stdscr.nodelay(True); stdscr.keypad(True)
     curses.start_color()
-    curses.init_pair(1, curses.COLOR_CYAN, curses.COLOR_BLACK) # Border/Title
+    curses.init_pair(1, curses.COLOR_CYAN, curses.COLOR_BLACK) # Active Panel Title
     curses.init_pair(2, curses.COLOR_WHITE, curses.COLOR_BLACK) # Normal Text
     curses.init_pair(3, curses.COLOR_GREEN, curses.COLOR_BLACK) # Added Chunk
-    curses.init_pair(4, curses.COLOR_RED, curses.COLOR_BLACK) # Removed Chunk
-
-    # Get screen dimensions
-    screen_height, screen_width = stdscr.getmaxyx()
-
-    # Define panel dimensions
-    left_panel_width = int(screen_width * 0.25)
-    right_panel_width = int(screen_width * 0.25)
-    center_panel_width = screen_width - left_panel_width - right_panel_width
+    curses.init_pair(4, curses.COLOR_RED, curses.COLOR_BLACK)   # Removed Chunk
+    curses.init_pair(5, curses.COLOR_BLACK, curses.COLOR_CYAN) # Highlighted Item
+    curses.init_pair(6, curses.COLOR_YELLOW, curses.COLOR_BLACK) # Status Bar
     
-    # Create windows for each panel
-    left_panel = stdscr.derwin(screen_height - 1, left_panel_width, 1, 0)
-    center_panel = stdscr.derwin(screen_height - 1, center_panel_width, 1, left_panel_width)
-    right_panel = stdscr.derwin(screen_height - 1, right_panel_width, 1, left_panel_width + center_panel_width)
+    # --- NEW: State management ---
+    state = {
+        "file_data": file_data,
+        "active_panel": "files", # files, editor, or chunks
+        "active_file_idx": 0,    # The file currently loaded in the editor
+        "selected_file_idx": 0,  # The file highlighted in the left panel
+        "scroll_pos": {"files": 0, "editor": 0, "chunks": 0}
+    }
 
-    # --- For this first step, we'll just use the first file ---
-    current_file = file_data[0] if file_data else None
-
-    # Main application loop (for now, it just draws once and waits for 'q')
     while True:
-        # Draw the base UI
-        stdscr.addstr(0, 0, "File Editor TUI - Press 'q' to quit", curses.color_pair(1))
-        draw_panel(left_panel, "Files")
-        draw_panel(center_panel, f"Editor: {os.path.basename(current_file['filepath']) if current_file else 'No file'}")
-        draw_panel(right_panel, "Code Chunks")
+        screen_height, screen_width = stdscr.getmaxyx()
+        
+        # Define panel dimensions
+        left_panel_width = int(screen_width * 0.25)
+        right_panel_width = int(screen_width * 0.25)
+        center_panel_width = screen_width - left_panel_width - right_panel_width
+        
+        # Create windows for each panel (must be done in loop for resizing)
+        left_panel = stdscr.derwin(screen_height - 1, left_panel_width, 1, 0)
+        center_panel = stdscr.derwin(screen_height - 1, center_panel_width, 1, left_panel_width)
+        right_panel = stdscr.derwin(screen_height - 1, right_panel_width, 1, left_panel_width + center_panel_width)
+        
+        # Set active panel title color
+        file_title_color = curses.color_pair(1) if state["active_panel"] == "files" else curses.color_pair(2)
+        editor_title_color = curses.color_pair(1) if state["active_panel"] == "editor" else curses.color_pair(2)
+        chunks_title_color = curses.color_pair(1) if state["active_panel"] == "chunks" else curses.color_pair(2)
 
+        # Draw UI
+        status_bar_text = "Navigate: Arrows | Load File: Enter | Switch Panels: Tab | Quit: q"
+        stdscr.addstr(0, 0, status_bar_text.ljust(screen_width), curses.color_pair(6))
+        draw_panel(left_panel, "Files", file_title_color)
+        draw_panel(center_panel, f"Editor: {os.path.basename(state['file_data'][state['active_file_idx']]['filepath'])}", editor_title_color)
+        draw_panel(right_panel, "Chunks", chunks_title_color)
+        
+        panel_height = screen_height - 3
+        
         # --- Populate Left Panel (Files) ---
-        y = 1
-        for i, file_item in enumerate(file_data):
-            if y < screen_height - 2:
-                filename = os.path.basename(file_item['filepath'])
-                left_panel.addstr(y, 1, f" {i+1}: {filename[:left_panel_width-4]}", curses.color_pair(2))
-                y += 1
-        
-        # --- Populate Center Panel (Editor) ---
-        if current_file:
-            lines = current_file['content'].split('\n')
-            for i, line in enumerate(lines):
-                if i + 1 < screen_height - 2:
-                    # Add line numbers
-                    display_line = f"{i+1:4d} | {line}"
-                    center_panel.addstr(i + 1, 1, display_line[:center_panel_width-2], curses.color_pair(2))
-        
-        # --- Populate Right Panel (Chunks) ---
-        if current_file:
-            y = 1
-            for i, chunk in enumerate(current_file['chunks']):
-                if y >= screen_height - 2: break
-                
-                action = chunk['action']
-                color = curses.color_pair(3) if action == "Added" else curses.color_pair(4)
-                
-                right_panel.addstr(y, 1, f"Chunk {i+1}: {action}", color)
-                y += 1
-                
-                # Display first few lines of the chunk
-                for line in chunk['code'].split('\n')[:3]:
-                    if y >= screen_height - 3: break
-                    right_panel.addstr(y, 2, f"> {line[:right_panel_width-5]}", curses.color_pair(2))
-                    y += 1
-                y += 1 # Add a blank line between chunks
+        scroll = state["scroll_pos"]["files"]
+        for i in range(panel_height):
+            idx = scroll + i
+            if idx >= len(state["file_data"]): break
+            filename = os.path.basename(state["file_data"][idx]['filepath'])
+            style = curses.color_pair(5) if idx == state["selected_file_idx"] else curses.color_pair(2)
+            left_panel.addstr(i + 1, 1, filename.ljust(left_panel_width-2)[:left_panel_width-2], style)
 
-        # Refresh the screen to show changes
-        stdscr.refresh()
-        left_panel.refresh()
-        center_panel.refresh()
-        right_panel.refresh()
-        
-        # Wait for user input
+        # --- Populate Center Panel (Editor) ---
+        active_file_content = state["file_data"][state["active_file_idx"]]["content"].split('\n')
+        scroll = state["scroll_pos"]["editor"]
+        for i in range(panel_height):
+            idx = scroll + i
+            if idx >= len(active_file_content): break
+            line = active_file_content[idx]
+            display_line = f"{idx+1:4d} | {line}"
+            center_panel.addstr(i + 1, 1, display_line[:center_panel_width-2], curses.color_pair(2))
+
+        # --- Populate Right Panel (Chunks) ---
+        active_file_chunks = state["file_data"][state["active_file_idx"]]["chunks"]
+        # This is more complex, so we'll build a list of lines to draw first
+        chunk_draw_lines = []
+        for i, chunk in enumerate(active_file_chunks):
+            action = chunk['action']; color = curses.color_pair(3) if action == "Added" else curses.color_pair(4)
+            chunk_draw_lines.append( (f"Chunk {i+1}: {action}", color) )
+            for line in chunk['code'].split('\n'):
+                chunk_draw_lines.append( (f"  > {line}", curses.color_pair(2)) )
+            chunk_draw_lines.append( ("", curses.color_pair(2)) ) # Spacer
+
+        scroll = state["scroll_pos"]["chunks"]
+        for i in range(panel_height):
+            idx = scroll + i
+            if idx >= len(chunk_draw_lines): break
+            line, color = chunk_draw_lines[idx]
+            right_panel.addstr(i + 1, 1, line[:right_panel_width-2], color)
+
+        # Refresh screens
+        stdscr.refresh(); left_panel.refresh(); center_panel.refresh(); right_panel.refresh()
+
+        # --- Handle Input ---
         key = stdscr.getch()
-        if key == ord('q'):
-            break
+        if key == ord('q'): break
+        
+        if key == ord('\t'): # Tab
+            panels = ["files", "editor", "chunks"]
+            current_idx = panels.index(state["active_panel"])
+            state["active_panel"] = panels[(current_idx + 1) % len(panels)]
+
+        elif key == curses.KEY_UP:
+            if state["active_panel"] == "files":
+                state["selected_file_idx"] = max(0, state["selected_file_idx"] - 1)
+                # Auto-scroll the view up
+                if state["selected_file_idx"] < state["scroll_pos"]["files"]:
+                    state["scroll_pos"]["files"] = state["selected_file_idx"]
+            else:
+                state["scroll_pos"][state["active_panel"]] = max(0, state["scroll_pos"][state["active_panel"]] - 1)
+
+        elif key == curses.KEY_DOWN:
+            active_panel = state["active_panel"]
+            if active_panel == "files":
+                state["selected_file_idx"] = min(len(file_data) - 1, state["selected_file_idx"] + 1)
+                # Auto-scroll the view down
+                if state["selected_file_idx"] >= state["scroll_pos"]["files"] + panel_height:
+                    state["scroll_pos"]["files"] = state["selected_file_idx"] - panel_height + 1
+            else:
+                # A simple scroll for editor and chunks
+                state["scroll_pos"][active_panel] += 1
+        
+        elif key == curses.KEY_ENTER or key == 10:
+            if state["active_panel"] == "files":
+                state["active_file_idx"] = state["selected_file_idx"]
+                # Reset scroll positions when loading a new file
+                state["scroll_pos"]["editor"] = 0
+                state["scroll_pos"]["chunks"] = 0
 
 # ---------------------------------------------------------------------
 # 3. MAIN EXECUTION BLOCK
@@ -159,12 +200,7 @@ def main(stdscr, file_data):
 
 if __name__ == "__main__":
     report_data = parse_report(MUD_REPORT_PATH)
-    if not report_data:
-        print("Exiting: No data parsed from the report."); exit()
-
+    if not report_data: print("Exiting: No data parsed from the report."); exit()
     file_list_for_tui = prepare_file_data(report_data)
-    if not file_list_for_tui:
-        print("Exiting: No files from the report were found in the repository."); exit()
-
-    # curses.wrapper handles all the terminal setup and teardown for us
+    if not file_list_for_tui: print("Exiting: No files from report were found."); exit()
     curses.wrapper(main, file_data=file_list_for_tui)

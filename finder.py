@@ -1,4 +1,4 @@
-# finder.py — Search a directory tree for files listed in the report.
+# finder.py - Search a directory tree for files listed in the report.
 
 # 
 

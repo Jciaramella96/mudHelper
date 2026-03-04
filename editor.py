@@ -1,4 +1,4 @@
-# editor.py — Apply insert/remove operations to files, with backup.
+# editor.py - Apply insert/remove operations to files, with backup.
 
 import shutil
 from pathlib import Path

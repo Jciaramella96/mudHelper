@@ -1,4 +1,4 @@
-# logger.py — Write a structured session log after a report-editor run.
+# logger.py - Write a structured session log after a report-editor run.
 
 # 
 
@@ -98,9 +98,9 @@ w(f"  Search root : {session_meta.get('search_root', 'unknown')}")
 w(f"  Files found : {session_meta.get('files_found', '?')} / {session_meta.get('files_found', 0) + session_meta.get('files_missing', 0)}")
 w(f"  Total changes in report : {session_meta.get('total_changes', '?')}")
 w()
-w(f"  ✓ Applied : {len(applied)}")
-w(f"  · Skipped : {len(skipped)}")
-w(f"  ✗ Errors  : {len(errors)}")
+w(f"  [OK] Applied : {len(applied)}")
+w(f"  . Skipped : {len(skipped)}")
+w(f"  [X] Errors  : {len(errors)}")
 w("=" * 72)
 w()
 
@@ -153,7 +153,7 @@ return log_path
 ```
 
 def _write_entry(w, r: dict):
-action_icon = {“applied”: “✓”, “skipped”: “·”, “error”: “✗”}.get(r.get(“action”, “”), “?”)
+action_icon = {“applied”: “[OK]”, “skipped”: “.”, “error”: “[X]”}.get(r.get(“action”, “”), “?”)
 ts = r.get(“timestamp”)
 ts_str = ts.strftime(”%H:%M:%S”) if isinstance(ts, datetime) else str(ts or “”)
 

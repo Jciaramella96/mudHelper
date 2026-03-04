@@ -13,12 +13,12 @@ def parse_arguments():
 
 def parse_report(report_path):
     """
-    Parses the human-readable report file, ignoring 'Only in New' files.
+    Parses the human-readable report file using a more robust content-capturing method.
     """
     report = {}
     current_file = None
     
-    action_regex = re.compile(r'^(\s*)(Added|Removed)\s*\([Ll]ines\s*(\d+)\s*-\s*(\d+)\s*\):', re.IGNORECASE)
+    action_regex = re.compile(r'^\s*(Added|Removed)\s*\([Ll]ines\s*(\d+)\s*-\s*(\d+)\s*\):', re.IGNORECASE)
 
     with open(report_path, 'r') as f:
         lines = f.readlines()
@@ -42,34 +42,42 @@ def parse_report(report_path):
 
         action_match = action_regex.match(line)
         if action_match and current_file:
-            leading_whitespace = action_match.group(1)
-            action_type = action_match.group(2).lower()
-            start_line = int(action_match.group(3))
-            end_line = int(action_match.group(4))
+            action_type = action_match.group(1).lower()
+            start_line = int(action_match.group(2))
+            end_line = int(action_match.group(3))
             
-            # The indentation of the content is deeper than the "Added/Removed" line
-            content_indent_level = len(leading_whitespace) + 4 
-            
-            content_block = []
             i += 1
-            # Consume the content block
+            
+            # --- NEW LOGIC START ---
+            
+            # 1. Capture the raw lines of the content block first
+            raw_content_lines = []
             while (i < len(lines) and 
                    not action_regex.match(lines[i]) and 
                    not re.match(r'^\S+:$', lines[i].strip()) and 
                    not re.match(r'^Only in New:', lines[i].strip())):
-                
-                # THE FIX: Instead of a fixed strip, we take the substring
-                # after the expected indentation level. This preserves all
-                # further indentation within the code block itself.
-                line_content = lines[i]
-                if len(line_content) > content_indent_level:
-                    content_block.append(line_content[content_indent_level:].rstrip('\n'))
-                else:
-                    # Handles blank lines in the content block
-                    content_block.append(line_content.rstrip('\n'))
-
+                raw_content_lines.append(lines[i].rstrip('\n'))
                 i += 1
+
+            # 2. Determine the base indentation from the first non-empty line
+            base_indent = 0
+            for l in raw_content_lines:
+                if l.strip(): # Find the first line with actual content
+                    base_indent = len(l) - len(l.lstrip())
+                    break
             
+            # 3. Process the raw lines to build the final content, stripping only the base indent
+            content_block = []
+            for l in raw_content_lines:
+                # Strip the base indentation. If a line is indented less, it becomes left-aligned.
+                # This preserves all relative indentation within the block.
+                if len(l) > base_indent:
+                    content_block.append(l[base_indent:])
+                else:
+                    content_block.append(l) # Append blank lines as-is
+            
+            # --- NEW LOGIC END ---
+
             change = {
                 'action': action_type,
                 'lines': (start_line, end_line),
@@ -172,8 +180,12 @@ def main():
         if not changes: continue
         full_path = find_file(rel_path, args.search_directory)
         if full_path:
-            print(f"  [FOUND] {rel_path} at {full_path}")
-            files_to_process.append({'path': full_path, 'changes': changes})
+            # Only add to list if there are actual changes to apply
+            if any(c['content'] for c in changes):
+                 print(f"  [FOUND] {rel_path} at {full_path}")
+                 files_to_process.append({'path': full_path, 'changes': changes})
+            else:
+                 print(f"  [FOUND] {rel_path} at {full_path} (No valid changes parsed)")
         else:
             print(f"  [NOT FOUND] {rel_path} in '{args.search_directory}'")
 

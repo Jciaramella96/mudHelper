@@ -1,26 +1,26 @@
-# tui.py — Curses TUI for stepping through report changes one at a time.
+# tui.py - Curses TUI for stepping through report changes one at a time.
 
 # 
 
 # Layout:
 
-# ┌─────────────────────────────────────────────────────┐
+# +—————————————————–+
 
-# │  HEADER: filename + change info                      │
+# |  HEADER: filename + change info                      |
 
-# ├─────────────────────────────────────────────────────┤
+# +—————————————————–+
 
-# │  FILE VIEW (scrollable, target region highlighted)  │
+# |  FILE VIEW (scrollable, target region highlighted)  |
 
-# ├─────────────────────────────────────────────────────┤
+# +—————————————————–+
 
-# │  CHANGE PANEL: action + code from report            │
+# |  CHANGE PANEL: action + code from report            |
 
-# ├─────────────────────────────────────────────────────┤
+# +—————————————————–+
 
-# │  STATUS BAR + KEY HINTS                              │
+# |  STATUS BAR + KEY HINTS                              |
 
-# └─────────────────────────────────────────────────────┘
+# +—————————————————–+
 
 # 
 
@@ -28,7 +28,7 @@
 
 # [A] Apply change     [S] Skip change     [Q] Quit
 
-# [↑/↓] Scroll file    [J/K] also scroll
+# [^/v] Scroll file    [J/K] also scroll
 
 import curses
 import textwrap
@@ -41,7 +41,7 @@ from finder import find_files
 from matcher import find_block, find_insert_line, MatchResult
 from editor import apply_insert, apply_remove
 
-# ── Colour pair IDs ──────────────────────────────────────────────────────────
+# – Colour pair IDs –––––––––––––––––––––––––––––
 
 C_NORMAL      = 0
 C_HEADER      = 1
@@ -146,10 +146,10 @@ while change_index < len(flat):
 
     stdscr.erase()
 
-    # ── Header ──────────────────────────────────────────────────────────
+    # -- Header ----------------------------------------------------------
     _draw_header(stdscr, w, fc, change, change_index, len(flat), file_path)
 
-    # ── File view ───────────────────────────────────────────────────────
+    # -- File view -------------------------------------------------------
     _draw_file_view(
         stdscr, file_lines,
         top_row=header_h, height=file_view_h, width=w,
@@ -160,21 +160,21 @@ while change_index < len(flat):
         file_path=file_path,
     )
 
-    # ── Change panel ────────────────────────────────────────────────────
+    # -- Change panel ----------------------------------------------------
     panel_top = header_h + file_view_h + 1
     _draw_change_panel(
         stdscr, change, match_result, insert_line,
         top_row=panel_top, height=panel_h, width=w,
     )
 
-    # ── Status bar ──────────────────────────────────────────────────────
+    # -- Status bar ------------------------------------------------------
     _draw_status(stdscr, h - 1, w, status_msg, status_color)
 
     stdscr.refresh()
     status_msg = ""
     status_color = C_STATUS_OK
 
-    # ── Input ───────────────────────────────────────────────────────────
+    # -- Input -----------------------------------------------------------
     key = stdscr.getch()
 
     if key in (ord("q"), ord("Q")):
@@ -204,7 +204,7 @@ while change_index < len(flat):
 
     elif key in (ord("a"), ord("A")):
         if file_path is None:
-            status_msg = "ERROR: File not found — cannot apply."
+            status_msg = "ERROR: File not found - cannot apply."
             status_color = C_STATUS_ERR
             session.results.append({
                 "action":        "error",
@@ -308,18 +308,18 @@ while change_index < len(flat):
     elif key == curses.KEY_NPAGE:
         scroll_offset = min(max(0, len(file_lines) - file_view_h), scroll_offset + file_view_h)
 
-# ── Summary screen ───────────────────────────────────────────────────────
+# -- Summary screen -------------------------------------------------------
 _draw_summary(stdscr, session.results)
 ```
 
-# ── Drawing helpers ───────────────────────────────────────────────────────────
+# – Drawing helpers ———————————————————–
 
 def _draw_header(stdscr, w, fc: FileChange, change: Change, idx: int, total: int, file_path):
 attr = curses.color_pair(C_HEADER) | curses.A_BOLD
-line0 = f” report-editor  ·  change {idx+1}/{total} “
-line1 = f” {‘✓’ if file_path else ‘✗’} {fc.filepath} “
+line0 = f” report-editor  .  change {idx+1}/{total} “
+line1 = f” {’[OK]’ if file_path else ‘[X]’} {fc.filepath} “
 verb  = “INSERT” if change.action == “insert” else “REMOVE”
-line2 = f” {verb} · report hint: lines {change.line_start}–{change.line_end} · {len(change.lines)} line(s) “
+line2 = f” {verb} . report hint: lines {change.line_start}-{change.line_end} . {len(change.lines)} line(s) “
 
 ```
 stdscr.addstr(0, 0, line0.ljust(w), attr)
@@ -331,7 +331,7 @@ def _draw_file_view(stdscr, file_lines, top_row, height, width, scroll,
 highlight_start, highlight_end, change_action, file_path):
 # Border line
 try:
-stdscr.addstr(top_row, 0, “─” * width, curses.color_pair(C_DIM))
+stdscr.addstr(top_row, 0, “-” * width, curses.color_pair(C_DIM))
 except curses.error:
 pass
 
@@ -369,7 +369,7 @@ for row in range(height - 1):
             line_attr = rm_attr
         else:
             line_attr = ins_attr
-        marker = "▶ " if change_action == "insert" else "✕ "
+        marker = "> " if change_action == "insert" else "? "
     else:
         line_attr = C_NORMAL
         marker = "  "
@@ -385,7 +385,7 @@ for row in range(height - 1):
 def _draw_change_panel(stdscr, change: Change, match_result: MatchResult | None,
 insert_line: int | None, top_row, height, width):
 try:
-stdscr.addstr(top_row, 0, “─” * width, curses.color_pair(C_DIM))
+stdscr.addstr(top_row, 0, “-” * width, curses.color_pair(C_DIM))
 except curses.error:
 pass
 
@@ -394,15 +394,15 @@ pass
 if change.action == "insert":
     verb_attr = curses.color_pair(C_INSERT_CODE) | curses.A_BOLD
     verb = "INSERT"
-    loc_str = f"→ insert before line {insert_line}" if insert_line else ""
+    loc_str = f"-> insert before line {insert_line}" if insert_line else ""
 else:
     verb_attr = curses.color_pair(C_REMOVE_CODE) | curses.A_BOLD
     verb = "REMOVE"
     if match_result and match_result.found:
         conf_pct = int(match_result.confidence * 100)
-        loc_str = f"→ found at lines {match_result.line_start}-{match_result.line_end}  [{conf_pct}% match, method: {match_result.method}]"
+        loc_str = f"-> found at lines {match_result.line_start}-{match_result.line_end}  [{conf_pct}% match, method: {match_result.method}]"
     else:
-        loc_str = "→ BLOCK NOT FOUND (low confidence)"
+        loc_str = "-> BLOCK NOT FOUND (low confidence)"
 
 title = f" {verb} "
 try:
@@ -426,7 +426,7 @@ for i, ln in enumerate(change.lines):
 
 # Key hints
 hint_row = top_row + height - 1
-hints = "  [A] Apply    [S] Skip    [Q] Quit    [↑↓ / J K] Scroll    [PgUp/PgDn]"
+hints = "  [A] Apply    [S] Skip    [Q] Quit    [^v / J K] Scroll    [PgUp/PgDn]"
 try:
     stdscr.addstr(hint_row, 0, hints[:width], curses.color_pair(C_DIM) | curses.A_DIM)
 except curses.error:
@@ -443,7 +443,7 @@ pass
 def _show_flash(stdscr, h, w, msg, color):
 attr = curses.color_pair(color) | curses.A_BOLD
 try:
-stdscr.addstr(h - 1, 0, f” ✓ {msg} “.ljust(w)[:w], attr)
+stdscr.addstr(h - 1, 0, f” [OK] {msg} “.ljust(w)[:w], attr)
 stdscr.refresh()
 curses.napms(800)
 except curses.error:
@@ -476,9 +476,9 @@ try:
         row = 6 + i
         if row >= h - 2:
             break
-        icon = "✓" if r["action"] == "applied" else "·"
+        icon = "[OK]" if r["action"] == "applied" else "."
         color = C_INSERT_CODE if r["action"] == "applied" else C_DIM
-        stdscr.addstr(row, 4, f"{icon} {r['file']}  —  {r['change']}"[:w - 4],
+        stdscr.addstr(row, 4, f"{icon} {r['file']}  -  {r['change']}"[:w - 4],
                       curses.color_pair(color))
     stdscr.addstr(h - 1, 0, " Press any key to exit ".ljust(w),
                   curses.color_pair(C_HEADER) | curses.A_BOLD)

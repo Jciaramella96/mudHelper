@@ -20,6 +20,9 @@ def parse_report(report_path):
     report = {}
     current_file = None
     
+    # This new regex is more flexible to handle "Lines" vs "lines" and spaces around the hyphen.
+    action_regex = re.compile(r'^\s*(Added|Removed)\s*\([Ll]ines\s*(\d+)\s*-\s*(\d+)\s*\):', re.IGNORECASE)
+
     with open(report_path, 'r') as f:
         lines = f.readlines()
 
@@ -42,8 +45,8 @@ def parse_report(report_path):
             i += 1
             continue
 
-        # Check for "Added" or "Removed" blocks, only if we have a valid current_file
-        action_match = re.match(r'^\s*(Added|Removed) \(lines (\d+)-(\d+)\):', line)
+        # Check for "Added" or "Removed" blocks using the new flexible regex
+        action_match = action_regex.match(line)
         if action_match and current_file:
             action_type = action_match.group(1).lower()
             start_line = int(action_match.group(2))
@@ -51,9 +54,8 @@ def parse_report(report_path):
             
             content_block = []
             i += 1
-            # Consume the content block, preserving indentation
-            while i < len(lines) and not re.match(r'^\s*(Added|Removed) \(lines \d+-\d+\):', lines[i]) and not re.match(r'^\S+:$', lines[i].strip()) and not re.match(r'^Only in New:', lines[i].strip()):
-                # The content starts after the 4-space indent
+            # Consume the content block
+            while i < len(lines) and not action_regex.match(lines[i]) and not re.match(r'^\S+:$', lines[i].strip()) and not re.match(r'^Only in New:', lines[i].strip()):
                 content_block.append(lines[i][4:].rstrip('\n'))
                 i += 1
             
@@ -121,8 +123,6 @@ def apply_changes(file_path, changes):
     # Process additions
     for change in additions:
         start_line_num, _ = change['lines']
-        # The report gives the line number to insert *before*, so this is our index.
-        # For a 1-based line number, the 0-based index is line_num - 1.
         insert_index = start_line_num - 1
         content = change['content']
         
@@ -141,7 +141,6 @@ def apply_changes(file_path, changes):
     # Write the changes back to the file
     try:
         with open(file_path, 'w') as f:
-            # Join with newline to write back correctly
             f.write('\n'.join(lines) + '\n')
         print(f"\nFinished processing. Saved changes to {file_path}")
     except Exception as e:
@@ -163,6 +162,7 @@ def main():
     print("--- File Analysis ---")
     files_to_process = []
     for rel_path, changes in report_data.items():
+        if not changes: continue # Skip if no valid changes were parsed
         full_path = find_file(rel_path, args.search_directory)
         if full_path:
             print(f"  [FOUND] {rel_path} at {full_path}")

@@ -37,23 +37,26 @@ def __str__(self):
 
 # Matches action headers in various forms:
 
-# (Added lines 33-39) / Added lines 33-39
+# Added (lines 376-394)
 
-# (Removed lines 25-30) / Removed lines 3-6
+# Removed (lines 6-7)
 
-# Remove the line   <- no line numbers, treat as best-effort
+# Removed lines (6-6)
+
+# Added lines (376-394)
+
+# Removed lines 3-6
 
 ACTION_RE = re.compile(
-r”””
-(?                         # optional opening paren
-(added|removed?|inserted?)  # verb
-\s+
-(?:lines?\s+)?              # optional “lines” word
-(\d+)                       # start line
-(?:\s*[–]\s*(\d+))?        # optional -end line
-)?                         # optional closing paren
-“””,
-re.IGNORECASE | re.VERBOSE,
+r’(added|removed?|inserted?)’   # verb
+r’\s+’
+r’(?:’
+r’(lines\s+(\d+)-(\d+))’  # (lines X-Y)
+r’|lines\s+((\d+)-(\d+))’ # lines (X-Y)
+r’|lines\s+(\d+)-(\d+)’     # lines X-Y
+r’|((\d+)-(\d+))’         # (X-Y)
+r’)’,
+re.IGNORECASE
 )
 
 # Loose filepath: starts with / or ./
@@ -72,8 +75,10 @@ if not m:
 return None
 verb = m.group(1).lower()
 action = “insert” if verb.startswith(“add”) or verb.startswith(“ins”) else “remove”
-start = int(m.group(2))
-end = int(m.group(3)) if m.group(3) else start
+# Groups 2+ come in pairs from each alternation branch - find first non-None pair
+nums = [g for g in m.groups()[1:] if g is not None]
+start = int(nums[0])
+end = int(nums[1]) if len(nums) > 1 else start
 return action, start, end
 
 # Parse a freeform report file, return list of FileChange objects

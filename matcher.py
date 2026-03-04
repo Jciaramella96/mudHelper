@@ -1,4 +1,4 @@
-# matcher.py — Fuzzy/pattern matching to locate code blocks in files.
+# matcher.py - Fuzzy/pattern matching to locate code blocks in files.
 
 # 
 
@@ -59,7 +59,7 @@ search_window: int = 40,
 confidence_threshold: float = 0.6,
 ) -> MatchResult:
 if not change_lines:
-# No content to match — trust the hint
+# No content to match - trust the hint
 return MatchResult(found=True, line_start=hint_start, line_end=hint_end,
 confidence=1.0, method=“hint”)
 

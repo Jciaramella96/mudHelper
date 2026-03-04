@@ -1,23 +1,34 @@
-“””
-tui.py — Curses TUI for stepping through report changes one at a time.
+# tui.py — Curses TUI for stepping through report changes one at a time.
 
-Layout:
-┌─────────────────────────────────────────────────────┐
-│  HEADER: filename + change info                      │
-├─────────────────────────────────────────────────────┤
-│                                                      │
-│  FILE VIEW (scrollable, target region highlighted)  │
-│                                                      │
-├─────────────────────────────────────────────────────┤
-│  CHANGE PANEL: action + code from report            │
-├─────────────────────────────────────────────────────┤
-│  STATUS BAR + KEY HINTS                              │
-└─────────────────────────────────────────────────────┘
+# 
 
-Keys:
-[A] Apply change     [S] Skip change     [Q] Quit
-[↑/↓] Scroll file    [J/K] also scroll
-“””
+# Layout:
+
+# ┌─────────────────────────────────────────────────────┐
+
+# │  HEADER: filename + change info                      │
+
+# ├─────────────────────────────────────────────────────┤
+
+# │  FILE VIEW (scrollable, target region highlighted)  │
+
+# ├─────────────────────────────────────────────────────┤
+
+# │  CHANGE PANEL: action + code from report            │
+
+# ├─────────────────────────────────────────────────────┤
+
+# │  STATUS BAR + KEY HINTS                              │
+
+# └─────────────────────────────────────────────────────┘
+
+# 
+
+# Keys:
+
+# [A] Apply change     [S] Skip change     [Q] Quit
+
+# [↑/↓] Scroll file    [J/K] also scroll
 
 import curses
 import textwrap

@@ -1,51 +1,77 @@
-“””
-logger.py — Write a structured session log after a report-editor run.
+# logger.py — Write a structured session log after a report-editor run.
 
-Log file format is plain text, human-readable, with a machine-parseable
-header block. Written to the same directory as the report file by default,
-named: report_editor_YYYYMMDD_HHMMSS.log
-“””
+# 
+
+# Log is plain text, human-readable.
+
+# Written next to the report file by default:
+
+# report_editor_YYYYMMDD_HHMMSS.log
 
 from datetime import datetime
 from pathlib import Path
+
+# Write session log. Returns the path it was written to.
+
+# 
+
+# session_meta keys:
+
+# report_file   str
+
+# search_root   str
+
+# started_at    datetime
+
+# ended_at      datetime
+
+# total_changes int
+
+# files_found   int
+
+# files_missing int
+
+# 
+
+# Each result dict has:
+
+# action        ‘applied’ | ‘skipped’ | ‘error’
+
+# file          str   (report path)
+
+# resolved_path str   (actual path on disk, or ‘NOT FOUND’)
+
+# change        str   (human summary)
+
+# operation     ‘insert’ | ‘remove’
+
+# hint_start    int
+
+# hint_end      int
+
+# actual_start  int | None
+
+# actual_end    int | None
+
+# confidence    float | None
+
+# match_method  str | None
+
+# backup_file   str | None
+
+# error_msg     str | None
+
+# timestamp     datetime
 
 def write_log(
 session_meta: dict,
 results: list[dict],
 log_path: Path | None = None,
 ) -> Path:
-“””
-Write session log. Returns the path the log was written to.
+now = session_meta.get(“ended_at”, datetime.now())
+ts = now.strftime(”%Y%m%d_%H%M%S”)
 
 ```
-session_meta keys:
-    report_file   str
-    search_root   str
-    started_at    datetime
-    ended_at      datetime
-    total_changes int
-    files_found   int
-    files_missing int
-
-results list — each dict has:
-    action        'applied' | 'skipped' | 'error'
-    file          str   (report path)
-    resolved_path str   (actual path on disk, or 'NOT FOUND')
-    change        str   (human summary, e.g. "INSERT lines 33-39")
-    operation     'insert' | 'remove'
-    hint_start    int
-    hint_end      int
-    actual_start  int | None
-    actual_end    int | None
-    confidence    float | None  (for remove fuzzy match)
-    match_method  str | None
-    backup_file   str | None
-    error_msg     str | None
-    timestamp     datetime
-"""
-now = session_meta.get("ended_at", datetime.now())
-ts = now.strftime("%Y%m%d_%H%M%S")
-
 if log_path is None:
     report_dir = Path(session_meta["report_file"]).parent
     log_path = report_dir / f"report_editor_{ts}.log"
@@ -59,7 +85,7 @@ lines = []
 def w(s=""):
     lines.append(s)
 
-# ── Header ───────────────────────────────────────────────────────────────
+# Header
 w("=" * 72)
 w("  REPORT-EDITOR SESSION LOG")
 w("=" * 72)
@@ -78,7 +104,6 @@ w(f"  ✗ Errors  : {len(errors)}")
 w("=" * 72)
 w()
 
-# ── Applied changes ───────────────────────────────────────────────────────
 if applied:
     w("APPLIED CHANGES")
     w("-" * 72)
@@ -86,7 +111,6 @@ if applied:
         _write_entry(w, r)
     w()
 
-# ── Skipped changes ───────────────────────────────────────────────────────
 if skipped:
     w("SKIPPED CHANGES")
     w("-" * 72)
@@ -94,7 +118,6 @@ if skipped:
         _write_entry(w, r)
     w()
 
-# ── Errors ────────────────────────────────────────────────────────────────
 if errors:
     w("ERRORS")
     w("-" * 72)
@@ -102,10 +125,9 @@ if errors:
         _write_entry(w, r)
     w()
 
-# ── File summary ─────────────────────────────────────────────────────────
+# Per-file summary
 w("FILE SUMMARY")
 w("-" * 72)
-# Group results by file
 by_file: dict[str, list[dict]] = {}
 for r in results:
     by_file.setdefault(r.get("file", "unknown"), []).append(r)
@@ -118,8 +140,7 @@ for filepath, file_results in by_file.items():
     w(f"  {filepath}")
     w(f"    Resolved : {resolved}")
     w(f"    Applied={n_applied}  Skipped={n_skipped}  Errors={n_err}")
-    backups = [r["backup_file"] for r in file_results if r.get("backup_file")]
-    for bk in backups:
+    for bk in [r["backup_file"] for r in file_results if r.get("backup_file")]:
         w(f"    Backup   : {bk}")
     w()
 
@@ -141,9 +162,9 @@ w(f"  {action_icon} [{ts_str}] {r.get('change', '?')}")
 w(f"      File     : {r.get('file', '?')}")
 w(f"      On disk  : {r.get('resolved_path', 'NOT FOUND')}")
 
-op = r.get("operation", "?")
-hint_s = r.get("hint_start")
-hint_e = r.get("hint_end")
+op      = r.get("operation", "?")
+hint_s  = r.get("hint_start")
+hint_e  = r.get("hint_end")
 actual_s = r.get("actual_start")
 actual_e = r.get("actual_end")
 

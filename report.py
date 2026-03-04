@@ -1,11 +1,12 @@
-“””
-report.py — Parse freeform report files into structured change objects.
+# report.py — Parse freeform report files into structured change objects.
 
-Handles inconsistent formatting:
+# 
 
-- (Added lines 33-39) / Added lines 33-39
-- (Removed lines 25-30) / Removed lines 3-6 / Remove lines / removed lines
-  “””
+# Handles inconsistent formatting:
+
+# - (Added lines 33-39) / Added lines 33-39
+
+# - (Removed lines 25-30) / Removed lines 3-6 / Remove lines / removed lines
 
 import re
 from dataclasses import dataclass, field
@@ -36,15 +37,11 @@ def __str__(self):
 
 # Matches action headers in various forms:
 
-# (Added lines 33-39)
+# (Added lines 33-39) / Added lines 33-39
 
-# Added lines 33-39
+# (Removed lines 25-30) / Removed lines 3-6
 
-# (Removed lines 25-30)
-
-# Removed lines 3-6
-
-# Remove the line   <- no line numbers, we treat as best-effort
+# Remove the line   <- no line numbers, treat as best-effort
 
 ACTION_RE = re.compile(
 r”””
@@ -59,7 +56,7 @@ r”””
 re.IGNORECASE | re.VERBOSE,
 )
 
-# Loose filepath: starts with / or ./ or alphanumeric, ends with an extension or no spaces
+# Loose filepath: starts with / or ./
 
 FILEPATH_RE = re.compile(r”^(/[\w./-]+|.?/[\w./-]+)$”)
 
@@ -67,8 +64,9 @@ def _is_filepath(line: str) -> bool:
 stripped = line.strip()
 return bool(FILEPATH_RE.match(stripped)) and not stripped.startswith(”#”)
 
+# Return (action, start, end) if line is an action header, else None
+
 def _parse_action(line: str) -> tuple[str, int, int] | None:
-“”“Return (action, start, end) if line is an action header, else None.”””
 m = ACTION_RE.search(line.strip())
 if not m:
 return None
@@ -78,8 +76,9 @@ start = int(m.group(2))
 end = int(m.group(3)) if m.group(3) else start
 return action, start, end
 
+# Parse a freeform report file, return list of FileChange objects
+
 def parse_report(report_path: str | Path) -> list[FileChange]:
-“”“Parse a freeform report file, return list of FileChange objects.”””
 text = Path(report_path).read_text(encoding=“utf-8”, errors=“replace”)
 lines = text.splitlines()
 

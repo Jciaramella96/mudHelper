@@ -87,13 +87,20 @@ total_changes = sum(len(fc.changes) for fc in session.file_changes)
 change_index = 0
 
 # Flatten changes into a list of (FileChange, Change)
+# Only include files that were actually found on disk
 flat: list[tuple[FileChange, Change]] = []
 for fc in session.file_changes:
+    file_path = session.file_map.get(fc.filepath)
+    if file_path is None:
+        continue
     for ch in fc.changes:
         flat.append((fc, ch))
 
 if not flat:
-    _show_message(stdscr, "No changes found in report.", C_STATUS_WARN)
+    found_count = sum(1 for v in session.file_map.values() if v)
+    total_count = len(session.file_map)
+    msg = f"No actionable changes: {found_count}/{total_count} files found, press any key to exit"
+    _show_message(stdscr, msg, C_STATUS_WARN)
     stdscr.getch()
     return
 

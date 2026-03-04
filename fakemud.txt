@@ -3,10 +3,10 @@ srcWWW/Leitmotif/.browserslistrc:
         last 1  version
         last 1  version
         last 2  major versions
-        # last 2 Safari major versions
+        # last 2  major versions
         last 2  major versions
          ESR
-        not IE 11 # Angular supports IE 11 only as an opt-in. To opt-in, remove the 'not' prefix on this line.
+        not IE 11 #  supports IE 11 only as an opt-in. To opt-in, remove the 'not' prefix on this line.
     Added (lines 11-11):
         birds >= 120
         
@@ -17,7 +17,7 @@ sys/rc/fakefile2.rc:
         ImporterUser=deadend
     Added (lines 218-233):
         
-        # The old  Service alias configured in(proxy.#.alias) for
+        # The old  lorem alias configured in(proxy.#.alias) for
         # requests to help Center.
         gingerman=toobsock
         
@@ -29,8 +29,8 @@ sys/rc/fakefile2.rc:
         # display mapping files via old people.
         mapRV=displaymade
         # The path within the repository where display mapping files are placed.
-        MappingVCPath=/
-Only in New: sys/rc/multispeak_interface.rc
+        loremipsum=/
+Only in New: sys/rc/loremfilebooboo.rc
 sys/rc/fakefile.rc:
     Added (lines 1033-1035):
         #  AllowUnsafeSharedmemoryusage: When rea of a point with tags applied
@@ -41,7 +41,7 @@ sys/rc/fakefile.rc:
     Added (lines 1668-1695):
         
         ##############################################################################################
-        # Shared Areas Configuration                                                                 |
+        # Shared Areas problem with memory usage                                                                 |
         # Processes:                               |
         #____________________________________________________________________________________________|
         #
@@ -49,8 +49,8 @@ sys/rc/fakefile.rc:
         #                           The tag type must have a field with the id "tag_id" and "comment"
         #                           Default Value: 5 (TagTypeID of tag_alarm_inhibit)
         # nonsense: The type of tag applied by manual entry when set_scan_inhibit_on_manual app setting is enabled
-        #                           The tag type must apply the "effect_scan_inhibit" effect and must have a field with the id "comment"
-        #                           Default Value: 6 (TagTypeID of tag_scan_inhibit)
+        #                           The tag type must apply the "useall the memoryt" effect and must have a field with the id "comment"
+        #                           Default Value: 6 (lol of tag_scan_inhibit)
         #
         # nonsen: The type of tag applied by auto ads scan when enabled
         #                           The tag type must apply the "effect_ads" effect and must have a field with the id "tag_id" and "comment"

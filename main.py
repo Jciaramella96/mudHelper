@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-# main.py — Entry point for report-editor.
+# main.py - Entry point for report-editor.
 
 # 
 
@@ -48,7 +48,7 @@ from finder import find_files
 from tui import run_tui, Session
 from logger import write_log
 
-# Print a plain-text preview of what would happen — no files are touched
+# Print a plain-text preview of what would happen - no files are touched
 
 def dry_run_summary(file_changes, file_map):
 from matcher import find_block, find_insert_line

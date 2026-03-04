@@ -13,84 +13,91 @@ def parse_arguments():
 
 def parse_report(report_path):
     """
-    Parses the human-readable report file using a more robust content-capturing method.
+    A simple and robust line-by-line parser for the report file.
     """
     report = {}
     current_file = None
     
+    # Regex to find "Added (lines X-Y)" or "Removed (lines X-Y)"
     action_regex = re.compile(r'^\s*(Added|Removed)\s*\([Ll]ines\s*(\d+)\s*-\s*(\d+)\s*\):', re.IGNORECASE)
 
-    with open(report_path, 'r') as f:
-        lines = f.readlines()
+    try:
+        with open(report_path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+    except FileNotFoundError:
+        print(f"Error: Report file not found at '{report_path}'")
+        return {}
 
     i = 0
     while i < len(lines):
         line = lines[i]
-        
-        file_match = re.match(r'^(?P<filepath>\S+):$', line.strip())
-        if file_match:
-            current_file = file_match.group('filepath')
-            if current_file not in report:
-                report[current_file] = []
-            i += 1
-            continue
-            
-        if re.match(r'^Only in New: \S+', line.strip()):
-            current_file = None 
+        line_stripped = line.strip()
+
+        # --- Rule 1: Is this line a new file path? ---
+        if line_stripped.endswith(':') and not action_regex.match(line):
+             # A simple check to ensure it's not a label within code
+            if ' ' not in line_stripped:
+                current_file = line_stripped.rstrip(':')
+                if current_file not in report:
+                    report[current_file] = []
+                i += 1
+                continue
+
+        # --- Rule 2: Is this line an "Only in New" line? ---
+        if line_stripped.startswith("Only in New:"):
+            current_file = None # Invalidate current file to ignore subsequent blocks
             i += 1
             continue
 
+        # --- Rule 3: Is this line an "Added" or "Removed" action? ---
         action_match = action_regex.match(line)
         if action_match and current_file:
             action_type = action_match.group(1).lower()
             start_line = int(action_match.group(2))
             end_line = int(action_match.group(3))
             
-            i += 1
+            i += 1 # Move to the first line of the content block
             
-            # --- NEW LOGIC START ---
-            
-            # 1. Capture the raw lines of the content block first
-            raw_content_lines = []
-            while (i < len(lines) and 
-                   not action_regex.match(lines[i]) and 
-                   not re.match(r'^\S+:$', lines[i].strip()) and 
-                   not re.match(r'^Only in New:', lines[i].strip())):
-                raw_content_lines.append(lines[i].rstrip('\n'))
+            # --- Capture the content block ---
+            content_lines_raw = []
+            while i < len(lines):
+                # The block ends when we see a new file or a new action
+                if lines[i].strip().endswith(':') and ' ' not in lines[i].strip():
+                    break
+                if action_regex.match(lines[i]):
+                    break
+                
+                content_lines_raw.append(lines[i])
                 i += 1
 
-            # 2. Determine the base indentation from the first non-empty line
-            base_indent = 0
-            for l in raw_content_lines:
-                if l.strip(): # Find the first line with actual content
-                    base_indent = len(l) - len(l.lstrip())
-                    break
-            
-            # 3. Process the raw lines to build the final content, stripping only the base indent
-            content_block = []
-            for l in raw_content_lines:
-                # Strip the base indentation. If a line is indented less, it becomes left-aligned.
-                # This preserves all relative indentation within the block.
-                if len(l) > base_indent:
-                    content_block.append(l[base_indent:])
-                else:
-                    content_block.append(l) # Append blank lines as-is
-            
-            # --- NEW LOGIC END ---
-
-            change = {
-                'action': action_type,
-                'lines': (start_line, end_line),
-                'content': content_block
-            }
-            report[current_file].append(change)
+            # --- Process indentation ---
+            if content_lines_raw:
+                # Find the indentation of the first line that has actual text
+                base_indent_len = -1
+                for l in content_lines_raw:
+                    if l.strip():
+                        base_indent_len = len(l) - len(l.lstrip())
+                        break
+                
+                # If the block was not empty, strip the base indentation from all lines
+                if base_indent_len != -1:
+                    processed_content = [l[base_indent_len:].rstrip('\r\n') for l in content_lines_raw]
+                    
+                    change = {
+                        'action': action_type,
+                        'lines': (start_line, end_line),
+                        'content': processed_content
+                    }
+                    report[current_file].append(change)
         else:
+            # Not a file, not an action, just move to the next line
             i += 1
             
-    return report
+    return {k: v for k, v in report.items() if v}
+
+# --- The rest of the script is unchanged ---
 
 def find_file(relative_path, search_directory):
-    """Finds the full path of a file, matching the relative path from the report."""
     normalized_path = os.path.join(*relative_path.split('/'))
     full_path = os.path.join(search_directory, normalized_path)
     if os.path.exists(full_path):
@@ -98,7 +105,6 @@ def find_file(relative_path, search_directory):
     return None
 
 def create_backup(file_path):
-    """Creates a backup of a file."""
     backup_path = f"{file_path}.bak"
     try:
         shutil.copy2(file_path, backup_path)
@@ -107,8 +113,6 @@ def create_backup(file_path):
         return f"Error creating backup for {file_path}: {e}"
 
 def apply_changes(file_path, changes):
-    """Interactively applies a list of changes to a single file."""
-    
     print(f"\n--- Processing file: {file_path} ---")
     try:
         with open(file_path, 'r') as f:
@@ -119,6 +123,10 @@ def apply_changes(file_path, changes):
 
     removals = sorted([c for c in changes if c['action'] == 'remove'], key=lambda x: x['lines'][0], reverse=True)
     additions = sorted([c for c in changes if c['action'] == 'add'], key=lambda x: x['lines'][0], reverse=True)
+
+    if not removals and not additions:
+        print("  (No valid changes were parsed for this file.)")
+        return
 
     for change in removals:
         start_line_num, end_line_num = change['lines']
@@ -162,30 +170,20 @@ def apply_changes(file_path, changes):
         print(f"  [ERROR] Could not write to file {file_path}: {e}")
 
 def main():
-    """Main function to run the tool."""
     args = parse_arguments()
+    report_data = parse_report(args.report_file)
 
-    try:
-        report_data = parse_report(args.report_file)
-    except FileNotFoundError:
-        print(f"Error: Report file not found at '{args.report_file}'")
-        return
-    except Exception as e:
-        print(f"An error occurred while parsing the report: {e}")
+    if not report_data:
+        print("\nCould not parse any valid files or changes from the report.")
         return
 
     print("--- File Analysis ---")
     files_to_process = []
     for rel_path, changes in report_data.items():
-        if not changes: continue
         full_path = find_file(rel_path, args.search_directory)
         if full_path:
-            # Only add to list if there are actual changes to apply
-            if any(c['content'] for c in changes):
-                 print(f"  [FOUND] {rel_path} at {full_path}")
-                 files_to_process.append({'path': full_path, 'changes': changes})
-            else:
-                 print(f"  [FOUND] {rel_path} at {full_path} (No valid changes parsed)")
+            print(f"  [FOUND] {rel_path} at {full_path}")
+            files_to_process.append({'path': full_path, 'changes': changes})
         else:
             print(f"  [NOT FOUND] {rel_path} in '{args.search_directory}'")
 
@@ -202,7 +200,6 @@ def main():
     for file_info in files_to_process:
         backup_msg = create_backup(file_info['path'])
         print(backup_msg)
-        
         apply_changes(file_info['path'], file_info['changes'])
 
     print("\n--- All changes processed. ---")

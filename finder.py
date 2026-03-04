@@ -1,33 +1,34 @@
-“””
-finder.py — Search a directory tree for files listed in the report.
-“””
+# finder.py — Search a directory tree for files listed in the report.
+
+# 
+
+# Strategy for each file:
+
+# 1. Try the exact path (absolute or relative to search_root)
+
+# 2. Strip leading / and try under search_root
+
+# 3. Match last N path components (3, then 2, then 1)
+
+# 4. Give up -> None
 
 from pathlib import Path
 
+# For each FileChange, locate the actual file under search_root.
+
+# Returns dict mapping report filepath string -> resolved Path (or None if not found)
+
 def find_files(file_changes, search_root: str | Path) -> dict[str, Path | None]:
-“””
-For each FileChange, try to find the actual file under search_root.
-
-```
-Strategy:
-1. Try the exact path (absolute or relative to search_root)
-2. Try matching just the filename
-3. Try matching the last 2 path components (filename + parent dir)
-4. Give up → None
-
-Returns: dict mapping filepath string → resolved Path (or None if not found)
-"""
 root = Path(search_root)
 results: dict[str, Path | None] = {}
 
+```
 # Pre-build index of all files under root for efficient lookup
-all_files: list[Path] = list(root.rglob("*"))
-all_files = [f for f in all_files if f.is_file()]
+all_files: list[Path] = [f for f in root.rglob("*") if f.is_file()]
 
 for fc in file_changes:
     report_path = Path(fc.filepath)
-    resolved = _resolve(report_path, root, all_files)
-    results[fc.filepath] = resolved
+    results[fc.filepath] = _resolve(report_path, root, all_files)
 
 return results
 ```

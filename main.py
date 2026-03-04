@@ -1,25 +1,42 @@
 #!/usr/bin/env python3
-“””
-main.py — Entry point for report-editor.
 
-Usage:
-python main.py <report_file> <search_root>
+# main.py — Entry point for report-editor.
 
-Arguments:
-report_file   Path to the freeform report file
-search_root   Root directory to search for files listed in the report
+# 
 
-Options:
--h, –help         Show this help message
-–dry-run          Preview changes without applying (skip TUI, print summary)
-–no-backup        Disable automatic .bak file creation before edits
-–log-file PATH    Write session log to PATH (default: next to report file)
-–no-log           Disable log file writing entirely
+# Usage:
 
-Example:
-python main.py changes.txt /var/www/myapp
-python main.py changes.txt /var/www/myapp –log-file /var/log/report_editor.log
-“””
+# python main.py <report_file> <search_root>
+
+# 
+
+# Arguments:
+
+# report_file   Path to the freeform report file
+
+# search_root   Root directory to search for files listed in the report
+
+# 
+
+# Options:
+
+# -h, –help         Show this help message
+
+# –dry-run          Preview changes without applying (skip TUI, print summary)
+
+# –no-backup        Disable automatic .bak file creation before edits
+
+# –log-file PATH    Write session log to PATH (default: next to report file)
+
+# –no-log           Disable log file writing entirely
+
+# 
+
+# Example:
+
+# python main.py changes.txt /var/www/myapp
+
+# python main.py changes.txt /var/www/myapp –log-file /var/log/report_editor.log
 
 import argparse
 import sys
@@ -31,15 +48,16 @@ from finder import find_files
 from tui import run_tui, Session
 from logger import write_log
 
+# Print a plain-text preview of what would happen — no files are touched
+
 def dry_run_summary(file_changes, file_map):
-“”“Print a plain-text preview of what would be done.”””
 from matcher import find_block, find_insert_line
 
 ```
 print("\n=== DRY RUN SUMMARY ===\n")
 for fc in file_changes:
     fp = file_map.get(fc.filepath)
-    status = f"FOUND → {fp}" if fp else "NOT FOUND"
+    status = f"FOUND -> {fp}" if fp else "NOT FOUND"
     print(f"  {fc.filepath}")
     print(f"    {status}")
     for ch in fc.changes:
@@ -55,7 +73,7 @@ for fc in file_changes:
                 loc = f"before line {il}"
         else:
             loc = "N/A (file not found)"
-        print(f"    [{verb}] report hint lines {ch.line_start}-{ch.line_end} → {loc}")
+        print(f"    [{verb}] report hint lines {ch.line_start}-{ch.line_end} -> {loc}")
         for ln in ch.lines[:3]:
             print(f"        | {ln}")
         if len(ch.lines) > 3:
@@ -66,8 +84,6 @@ for fc in file_changes:
 def main():
 parser = argparse.ArgumentParser(
 description=“Interactive TUI for applying report-driven file changes.”,
-formatter_class=argparse.RawDescriptionHelpFormatter,
-epilog=**doc**,
 )
 parser.add_argument(“report_file”, help=“Path to the report file”)
 parser.add_argument(“search_root”, help=“Root directory to search for files”)
@@ -115,7 +131,7 @@ if args.dry_run:
     dry_run_summary(file_changes, file_map)
     return
 
-# Patch editor backup setting if requested
+# Disable backups if requested
 if args.no_backup:
     import editor as _ed
     _orig_insert = _ed.apply_insert
@@ -139,7 +155,7 @@ errors   = sum(1 for r in session.results if r["action"] == "error")
 
 print(f"\nDone. Applied: {applied}  Skipped: {skipped}  Errors: {errors}")
 
-# ── Write log ────────────────────────────────────────────────────────────
+# Write session log
 if not args.no_log:
     log_path = Path(args.log_file) if args.log_file else None
     meta = {

@@ -1,4 +1,4 @@
-# report.py — Parse freeform report files into structured change objects.
+# report.py - Parse freeform report files into structured change objects.
 
 # 
 
@@ -50,7 +50,7 @@ r”””
 \s+
 (?:lines?\s+)?              # optional “lines” word
 (\d+)                       # start line
-(?:\s*[-–]\s*(\d+))?        # optional -end line
+(?:\s*[–]\s*(\d+))?        # optional -end line
 )?                         # optional closing paren
 “””,
 re.IGNORECASE | re.VERBOSE,
@@ -114,7 +114,7 @@ for raw in lines:
         continue
 
     if current_file is None:
-        # Haven't hit a filepath yet — skip
+        # Haven't hit a filepath yet - skip
         continue
 
     # Check for an action header

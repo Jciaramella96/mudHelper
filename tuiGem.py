@@ -3,8 +3,8 @@ import os
 import re
 
 # --- Configuration ---
-REPO_SEARCH_PATH = "/path/to/your/repo"  # <--- IMPORTANT: SET THIS
-MUD_REPORT_PATH = "/path/to/your/rc.diff" # <--- IMPORTANT: SET THIS
+REPO_SEARCH_PATH = "/opt/osi/osi_cust"  # <--- IMPORTANT: SET THIS
+MUD_REPORT_PATH = "./rc.diff" # <--- IMPORTANT: SET THIS
 COMPILE_ID = "12345" # Placeholder
 
 # ---------------------------------------------------------------------

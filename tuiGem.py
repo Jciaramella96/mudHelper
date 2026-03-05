@@ -2,7 +2,6 @@ import curses
 import os
 import re
 import math
-import time
 
 # --- Configuration ---
 REPO_SEARCH_PATH = "/opt/osi/osi_cust"  # <--- IMPORTANT: SET THIS
@@ -112,12 +111,13 @@ class Editor:
         cursor_y, cursor_x = self.y - self.window_y + 1, self.x + gutter_width + 3
         if 0 < cursor_y <= panel_height: window.move(cursor_y, cursor_x)
 
-# --- VERIFIED: This function is now correctly defined and present. ---
 def draw_panel(window, title, color_pair):
     window.erase(); window.border(); window.addstr(0, 2, f" {title} ", color_pair)
 
 def main(stdscr, file_data):
-    curses.curs_set(0); stdscr.nodelay(True); stdscr.keypad(True)
+    # Use a blocking getch() call. This is the key to stability.
+    stdscr.nodelay(False)
+    stdscr.keypad(True)
     curses.start_color()
     curses.init_pair(1,curses.COLOR_CYAN,curses.COLOR_BLACK); curses.init_pair(2,curses.COLOR_WHITE,curses.COLOR_BLACK)
     curses.init_pair(3,curses.COLOR_GREEN,curses.COLOR_BLACK); curses.init_pair(4,curses.COLOR_RED,curses.COLOR_BLACK)
@@ -131,7 +131,7 @@ def main(stdscr, file_data):
 
     while True:
         screen_height, screen_width = stdscr.getmaxyx(); panel_height = screen_height - 3
-        if screen_width < 20: stdscr.erase(); stdscr.addstr(0,0,"Window too narrow!"); stdscr.refresh(); time.sleep(0.1); continue
+        if screen_width < 20: stdscr.erase(); stdscr.addstr(0,0,"Window too narrow!"); stdscr.refresh(); continue
 
         l_w, r_w = int(screen_width*0.25), int(screen_width*0.25); c_w = screen_width - l_w - r_w
         l_p, c_p, r_p = stdscr.derwin(screen_height-1,l_w,1,0), stdscr.derwin(screen_height-1,c_w,1,l_w), stdscr.derwin(screen_height-1,r_w,1,l_w+c_w)
@@ -163,10 +163,11 @@ def main(stdscr, file_data):
         curses.curs_set(1 if state["active_panel"] == "editor" else 0)
         stdscr.refresh();l_p.refresh();c_p.refresh();r_p.refresh()
 
+        # The loop now waits here until a key is pressed. No more freezing.
         key=stdscr.getch()
-        if key==17:break # Ctrl+Q
-        if key==-1:continue
 
+        if key==17:break # Ctrl+Q
+        
         if key==19: # Ctrl+S
             file_data[active_file_idx]["buffer"] = editor.buffer
             with open(file_data[active_file_idx]["filepath"],'w',encoding='utf-8')as f:f.write('\n'.join(editor.buffer))
@@ -195,4 +196,3 @@ if __name__ == "__main__":
     if not file_list_for_tui: print("Exiting: No files from report were found."); exit()
     curses.wrapper(main, file_data=file_list_for_tui)
     print("TUI exited gracefully.")
-

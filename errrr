@@ -1,10 +1,8 @@
-
-  File "/opt/osi/osi_cust/scripts/mud_editor/tuiGem.py", line 219, in <module>
+Traceback (most recent call last):
+  File "/opt/osi/osi_cust/scripts/mud_editor/tuiGem.py", line 213, in <module>
     curses.wrapper(main, file_data=file_list_for_tui)
   File "/usr/lib64/python3.12/curses/__init__.py", line 94, in wrapper
     return func(stdscr, *args, **kwds)
            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/osi/osi_cust/scripts/mud_editor/tuiGem.py", line 193, in main
-    elif key == ord('\\t'): state["active_panel"]=["files","editor","chunks"][ (["files","editor","chunks"].index(state["active_panel"])+1)%3 ]
-                ^^^^^^^^^^
-TypeError: ord() expected a character, but string of length 2 found
+  File "/opt/osi/osi_cust/scripts/mud_editor/tuiGem.py", line 151, in main
+    curses.curs_set(1 if state["active_panel"] == "editor" else 0)

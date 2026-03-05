@@ -1,9 +1,7 @@
 import curses
-import curses.textpad
 import os
 import re
 import math
-import time
 
 # --- Configuration ---
 REPO_SEARCH_PATH = "/opt/osi/osi_cust"  # <--- IMPORTANT: SET THIS
@@ -51,125 +49,102 @@ def prepare_file_data(report_data):
             for correct_path in correct_paths_list:
                 try:
                     with open(correct_path, 'r', encoding='utf-8') as f: content = f.read()
-                    files_to_launch.append({"filepath": correct_path, "content": content, "chunks": report_data[original_full_path], "saved_content": content})
+                    files_to_launch.append({"filepath": correct_path, "content": content.split('\n'), "chunks": report_data[original_full_path]})
                 except Exception: continue
     return files_to_launch
 
 # ---------------------------------------------------------------------
-# 2. THE CURSES TUI APPLICATION
+# 2. NEW ARCHITECTURE: Classes for Editor, Cursor, and Window
 # ---------------------------------------------------------------------
 
-def draw_panel(window, title, color_pair):
-    window.erase(); window.border(); window.addstr(0, 2, f" {title} ", color_pair)
+class Cursor:
+    def __init__(self, y=0, x=0):
+        self.y, self.x = y, x
 
-def edit_mode(stdscr, content, filepath):
-    """Function to handle editing within a Textbox."""
-    screen_height, screen_width = stdscr.getmaxyx()
-    edit_win = curses.newwin(screen_height - 2, screen_width - 2, 1, 1)
-    
-    # THE FIX: Use a mutable dictionary for the exit status
-    exit_status = {'save': False}
-    
-    def validator(ch):
-        if ch == 19: # Ctrl+S
-            exit_status['save'] = True
-            return curses.ascii.BEL # Signal to exit
-        if ch == 7: # Ctrl+G
-            exit_status['save'] = False
-            return curses.ascii.BEL # Signal to exit
-        return ch
+    def move(self, key, buffer):
+        if key == curses.KEY_UP: self.y = max(0, self.y - 1)
+        elif key == curses.KEY_DOWN: self.y = min(len(buffer) - 1, self.y + 1)
+        elif key == curses.KEY_LEFT: self.x = max(0, self.x - 1)
+        elif key == curses.KEY_RIGHT: self.x = min(len(buffer[self.y]), self.x + 1)
+        # Ensure cursor x is not out of bounds of the current line
+        self.x = min(len(buffer[self.y]), self.x)
 
-    stdscr.erase()
-    stdscr.addstr(0, 0, f"EDITING: {os.path.basename(filepath)} | Ctrl+S to Save & Exit Edit Mode | Ctrl+G to Cancel".ljust(screen_width), curses.color_pair(6))
-    stdscr.refresh()
+class EditorWindow:
+    def __init__(self, y=0, x=0):
+        self.y, self.x = y, x
 
-    # Populate the window before creating the textbox
-    for i, line in enumerate(content.split('\n')):
-        if i < screen_height - 3:
-            edit_win.addstr(i + 1, 1, line)
-    edit_win.refresh()
-    
-    box = curses.textpad.Textbox(edit_win, insert_mode=True)
-    
-    # This call blocks until the validator signals an exit
-    new_content = box.edit(validator)
-    
-    if exit_status['save']:
-        return new_content.strip()
-    else:
-        return None # Indicate that no save should happen
+    def scroll(self, cursor, height, width):
+        # Vertical scroll
+        if cursor.y < self.y: self.y = cursor.y
+        if cursor.y >= self.y + height: self.y = cursor.y - height + 1
+        # Horizontal scroll (future implementation)
 
 def main(stdscr, file_data):
-    curses.curs_set(0); stdscr.nodelay(True); stdscr.keypad(True)
+    curses.curs_set(1); stdscr.nodelay(False); stdscr.keypad(True)
     curses.start_color()
-    curses.init_pair(1, curses.COLOR_CYAN, curses.COLOR_BLACK); curses.init_pair(2, curses.COLOR_WHITE, curses.COLOR_BLACK)
-    curses.init_pair(3, curses.COLOR_GREEN, curses.COLOR_BLACK); curses.init_pair(4, curses.COLOR_RED, curses.COLOR_BLACK)
-    curses.init_pair(5, curses.COLOR_BLACK, curses.COLOR_CYAN); curses.init_pair(6, curses.COLOR_BLACK, curses.COLOR_YELLOW)
+    curses.init_pair(1, curses.COLOR_CYAN, curses.COLOR_BLACK)
+    curses.init_pair(2, curses.COLOR_WHITE, curses.COLOR_BLACK)
+    curses.init_pair(6, curses.COLOR_BLACK, curses.COLOR_YELLOW)
+
+    if not file_data: return
     
-    state = { "file_data": file_data, "active_panel": "files", "active_file_idx": 0, "selected_file_idx": 0,
-              "selected_chunk_idx": 0, "scroll_pos": {"files": 0, "editor": 0, "chunks": 0} }
+    # --- State Initialization ---
+    active_file = file_data[0]
+    buffer = active_file['content'] # The buffer is just a list of strings
+    cursor = Cursor()
+    window = EditorWindow()
 
     while True:
-        screen_height, screen_width = stdscr.getmaxyx(); panel_height = screen_height - 3
-        if screen_width < 20: stdscr.erase(); stdscr.addstr(0,0,"Window too narrow!"); stdscr.refresh(); time.sleep(0.1); continue
-
-        l_w, r_w = int(screen_width*0.25), int(screen_width*0.25); c_w = screen_width - l_w - r_w
-        l_p, c_p, r_p = stdscr.derwin(screen_height-1,l_w,1,0), stdscr.derwin(screen_height-1,c_w,1,l_w), stdscr.derwin(screen_height-1,r_w,1,l_w+c_w)
+        screen_height, screen_width = stdscr.getmaxyx()
         
-        status_text = "Arrows: Navigate | Enter: Select/Edit | Tab: Switch | Ctrl+Q: Quit"
-        stdscr.addstr(0, 0, status_text.ljust(screen_width), curses.color_pair(6))
+        # --- Drawing Logic ---
+        stdscr.erase()
+        status_bar = f"EDIT MODE | File: {os.path.basename(active_file['filepath'])} | Line: {cursor.y+1}, Col: {cursor.x+1} | Ctrl+Q to Quit"
+        stdscr.addstr(0, 0, status_bar.ljust(screen_width), curses.color_pair(6))
 
-        active_file = state["file_data"][state["active_file_idx"]]
-        draw_panel(l_p, "Files", curses.color_pair(1) if state["active_panel"] == "files" else curses.color_pair(2))
-        draw_panel(c_p, f"Editor: {os.path.basename(active_file['filepath'])}", curses.color_pair(1) if state["active_panel"] == "editor" else curses.color_pair(2))
-        draw_panel(r_p, "Chunks", curses.color_pair(1) if state["active_panel"] == "chunks" else curses.color_pair(2))
+        # Render the "viewport" of the buffer
+        for i in range(screen_height - 1):
+            buffer_y = window.y + i
+            if buffer_y < len(buffer):
+                stdscr.addstr(i + 1, 0, buffer[buffer_y][:screen_width])
+
+        # Position the actual curses cursor
+        stdscr.move(cursor.y - window.y + 1, cursor.x - window.x)
+        stdscr.refresh()
+
+        # --- Input Handling ---
+        key = stdscr.getch()
+        if key == 17: # Ctrl+Q
+            break
+            
+        # THE FIX: Let the Cursor and Window objects manage their own state
+        is_backspace = key in [curses.KEY_BACKSPACE, 127, 8]
+
+        if key in [curses.KEY_UP, curses.KEY_DOWN, curses.KEY_LEFT, curses.KEY_RIGHT]:
+            cursor.move(key, buffer)
+        elif is_backspace:
+            if cursor.x > 0:
+                buffer[cursor.y] = buffer[cursor.y][:cursor.x-1] + buffer[cursor.y][cursor.x:]
+                cursor.move(curses.KEY_LEFT, buffer)
+            elif cursor.y > 0:
+                prev_line_len = len(buffer[cursor.y-1])
+                buffer[cursor.y-1] += buffer[cursor.y]
+                del buffer[cursor.y]
+                cursor.move(curses.KEY_UP, buffer)
+                cursor.x = prev_line_len
+        elif key == 10: # Enter
+            line_rest = buffer[cursor.y][cursor.x:]
+            buffer[cursor.y] = buffer[cursor.y][:cursor.x]
+            buffer.insert(cursor.y + 1, line_rest)
+            cursor.move(curses.KEY_DOWN, buffer)
+            cursor.x = 0
+        elif 32 <= key <= 126: # Printable characters
+            buffer[cursor.y] = buffer[cursor.y][:cursor.x] + chr(key) + buffer[cursor.y][cursor.x:]
+            cursor.move(curses.KEY_RIGHT, buffer)
         
-        for i in range(panel_height):
-            idx = state["scroll_pos"]["files"]+i;
-            if idx<len(state["file_data"]):l_p.addstr(i+1,1,os.path.basename(state["file_data"][idx]['filepath']).ljust(l_w-2)[:l_w-2],curses.color_pair(5)if idx==state["selected_file_idx"]else curses.color_pair(2))
-        
-        editor_content = active_file["content"].split('\n')
-        total_lines = len(editor_content); gutter_width = max(4,math.ceil(math.log10(total_lines+1))if total_lines>0 else 4)
-        for i in range(panel_height):
-            idx=state["scroll_pos"]["editor"]+i;
-            if idx<total_lines:c_p.addstr(i+1,1,f"{idx+1:{gutter_width}d} | {editor_content[idx]}"[:c_w-2],curses.color_pair(2))
+        # Tell the window to scroll if the cursor moved off-screen
+        window.scroll(cursor, screen_height - 1, screen_width)
 
-        chunk_draw_list=[]
-        for i,c in enumerate(active_file["chunks"]):
-            header_style=curses.color_pair(5)if i==state["selected_chunk_idx"]and state["active_panel"]=="chunks"else(curses.color_pair(3)if c["action"]=="Added"else curses.color_pair(4))
-            chunk_draw_list.append((f"Chunk {i+1}: {c['action']} (Lines: {c['lines']})",header_style))
-            chunk_draw_list.extend([(f"  > {l}",curses.color_pair(2))for l in c['code'].split('\n')[:3]]);chunk_draw_list.append(("",curses.color_pair(2)))
-        for i in range(panel_height):
-            idx=state["scroll_pos"]["chunks"]+i;
-            if idx<len(chunk_draw_list):line,style=chunk_draw_list[idx];r_p.addstr(i+1,1,line[:r_w-2],style)
-
-        stdscr.refresh();l_p.refresh();c_p.refresh();r_p.refresh()
-
-        key=stdscr.getch()
-        if key==17:break # Ctrl+Q to quit
-        if key==-1:continue
-
-        if key==ord('\t'):state["active_panel"]=["files","editor","chunks"][(["files","editor","chunks"].index(state["active_panel"])+1)%3]
-        
-        ap=state["active_panel"]
-        if ap=="files":
-            delta=-1 if key==curses.KEY_UP else 1
-            if key in[curses.KEY_UP,curses.KEY_DOWN]:state["selected_file_idx"]=max(0,min(len(file_data)-1,state["selected_file_idx"]+delta))
-            elif key in[curses.KEY_ENTER,10]:state["active_file_idx"]=state["selected_file_idx"];state["scroll_pos"]["editor"],state["scroll_pos"]["chunks"],state["selected_chunk_idx"]=0,0,0
-        elif ap=="chunks":
-            delta=-1 if key==curses.KEY_UP else 1
-            if key in[curses.KEY_UP,curses.KEY_DOWN]:state["selected_chunk_idx"]=max(0,min(len(active_file["chunks"])-1,state["selected_chunk_idx"]+delta))
-        elif ap=="editor":
-            if key in[curses.KEY_PPAGE,curses.KEY_NPAGE]:state["scroll_pos"]["editor"]=max(0,state["scroll_pos"]["editor"]+(-1 if key==curses.KEY_PPAGE else 1)*panel_height)
-            elif key in[curses.KEY_ENTER,10]:
-                # --- Enter Edit Mode ---
-                new_content=edit_mode(stdscr,active_file["content"],active_file["filepath"])
-                if new_content is not None:
-                    active_file["content"]=new_content
-                    # Save immediately to the file system as per the new architecture
-                    with open(active_file["filepath"],'w',encoding='utf-8')as f:f.write(new_content)
-                # After edit mode, clear the screen to force a full redraw
-                stdscr.clear()
 
 if __name__ == "__main__":
     report_data = parse_report(MUD_REPORT_PATH)
@@ -177,5 +152,4 @@ if __name__ == "__main__":
     file_list_for_tui = prepare_file_data(report_data)
     if not file_list_for_tui: print("Exiting: No files from report were found."); exit()
     curses.wrapper(main, file_data=file_list_for_tui)
-    print("TUI exited gracefully.")
-
+    print("Editor exited.")

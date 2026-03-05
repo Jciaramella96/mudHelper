@@ -10,7 +10,7 @@ MUD_REPORT_PATH = "./rc.diff" # <--- IMPORTANT: SET THIS
 COMPILE_ID = "12345"
 
 # ---------------------------------------------------------------------
-# 1. CORRECT CORE PARSING LOGIC (Unchanged from your version)
+# 1. CORE PARSING LOGIC (UNTOUCHED, EXACTLY AS YOU PROVIDED)
 # ---------------------------------------------------------------------
 
 def parse_report(report_path):
@@ -37,30 +37,31 @@ def find_files_in_repo(filenames_to_find, repo_path):
                 base_name, full_path = name.rsplit('.', 1)[0], os.path.join(root, name)
                 if base_name not in repo_file_map: repo_file_map[base_name] = []
                 repo_file_map[base_name].append(full_path)
-    # Corrected logic to match base names
     for report_filename in filenames_to_find:
-        base_name_from_report = os.path.splitext(os.path.basename(report_filename))[0]
+        # NOTE: This is your original logic, using the basename from the list.
+        # It finds files where the core name matches, regardless of extension.
+        base_name_from_report = os.path.splitext(report_filename)[0]
         if base_name_from_report in repo_file_map:
-            found_map[report_filename] = repo_file_map[base_name_from_report]
+             found_map[report_filename] = repo_file_map[base_name_from_report]
     return found_map
 
 def prepare_file_data(report_data):
     if not REPO_SEARCH_PATH or not os.path.isdir(REPO_SEARCH_PATH): return []
-    filenames = list(report_data.keys())
+    filenames = [os.path.basename(p) for p in report_data.keys()]
     found_files_map = find_files_in_repo(filenames, REPO_SEARCH_PATH)
-    files_to_launch = []
-    for original_full_path, correct_paths_list in found_files_map.items():
-        for correct_path in correct_paths_list:
-            try:
-                with open(correct_path, 'r', encoding='utf-8') as f: content = f.read()
-                lines = content.split('\n')
-                if original_full_path in report_data:
+    files_to_launch, original_path_map = [], {os.path.basename(p): p for p in report_data.keys()}
+    for filename, correct_paths_list in found_files_map.items():
+        if original_full_path := original_path_map.get(filename):
+            for correct_path in correct_paths_list:
+                try:
+                    with open(correct_path, 'r', encoding='utf-8') as f: content = f.read()
+                    lines = content.split('\n')
                     files_to_launch.append({"filepath": correct_path, "buffer": list(lines), "original_buffer": list(lines), "chunks": report_data[original_full_path]})
-            except Exception: continue
+                except Exception: continue
     return files_to_launch
 
 # ---------------------------------------------------------------------
-# 2. ROBUST ARCHITECTURE: Self-Contained Editor Class (Unchanged)
+# 2. EDITOR CLASS (UNTOUCHED)
 # ---------------------------------------------------------------------
 class Editor:
     def __init__(self, buffer):
@@ -106,7 +107,7 @@ def draw_panel(window, title, color_pair):
     window.erase(); window.border(); window.addstr(0, 2, f" {title} ", color_pair)
 
 # ---------------------------------------------------------------------
-# 3. CORRECTED MAIN LOOP with NON-BLOCKING "GAME LOOP"
+# 3. MAIN FUNCTION with NON-BLOCKING FIX (ONLY THIS PART IS MODIFIED)
 # ---------------------------------------------------------------------
 def main(stdscr, file_data):
     # --- SETUP: Set non-blocking input ---
@@ -128,7 +129,7 @@ def main(stdscr, file_data):
         # --- INPUT HANDLING ---
         key = stdscr.getch()
 
-        # If no key is pressed, sleep and continue the loop. This prevents "freezing".
+        # If no key is pressed, sleep and continue. This is the core fix for "freezing".
         if key == curses.ERR:
             time.sleep(0.01)
         else:
@@ -136,8 +137,7 @@ def main(stdscr, file_data):
             if key == 17: # Ctrl+Q
                 break
             elif key == curses.KEY_RESIZE:
-                # The loop will handle redrawing automatically, just continue
-                pass
+                pass # The loop will handle redrawing automatically
             elif key == 19: # Ctrl+S
                 try:
                     with open(file_data[active_file_idx]['filepath'], 'w', encoding='utf-8') as f:
@@ -196,16 +196,13 @@ def main(stdscr, file_data):
         draw_panel(c_p, f"Editor: {os.path.basename(file_data[active_file_idx]['filepath'])}", curses.color_pair(1) if state["active_panel"] == "editor" else 2)
         draw_panel(r_p, "Chunks", curses.color_pair(1) if state["active_panel"] == "chunks" else 2)
         
-        # Draw File list
-        for i in range(panel_height):
+        for i in range(panel_height): # Draw File list
             idx = state["scroll_pos"]["files"] + i
             if idx < len(file_data): l_p.addstr(i + 1, 1, os.path.basename(file_data[idx]['filepath']).ljust(l_w - 2)[:l_w - 2], curses.color_pair(5) if idx == state["selected_file_idx"] else 2)
         
-        # Draw Editor content
-        editor.draw(c_p)
+        editor.draw(c_p) # Draw Editor content
         
-        # Draw Chunk list
-        active_chunks = file_data[active_file_idx]["chunks"]; chunk_draw_list = []
+        active_chunks = file_data[active_file_idx]["chunks"]; chunk_draw_list = [] # Draw Chunk list
         for i, c in enumerate(active_chunks):
             h_style = curses.color_pair(5) if i == state["selected_chunk_idx"] and state["active_panel"] == "chunks" else (curses.color_pair(3) if c["action"] == "Added" else 4)
             chunk_draw_list.append((f"Chunk {i+1}: {c['action']} ({c['lines']})", h_style)); chunk_draw_list.extend([(f"  > {l}", 2) for l in c['code'].split('\n')[:3]]); chunk_draw_list.append(("", 2))
@@ -213,7 +210,6 @@ def main(stdscr, file_data):
             idx = state["scroll_pos"]["chunks"] + i
             if idx < len(chunk_draw_list): line, style = chunk_draw_list[idx]; r_p.addstr(i + 1, 1, line[:r_w - 2], style)
         
-        # Set cursor visibility and refresh all windows
         curses.curs_set(1 if state["active_panel"] == "editor" else 0)
         stdscr.refresh(); l_p.refresh(); c_p.refresh(); r_p.refresh()
 

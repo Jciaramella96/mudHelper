@@ -1,11 +1,11 @@
 import curses
 import os
 import re
-import math # Needed for the fix
+import math
 
 # --- Configuration ---
-REPO_SEARCH_PATH = "/opt/osi/osi_cust"  # <--- IMPORTANT: SET THIS
-MUD_REPORT_PATH = "./rc.diff" # <--- IMPORTANT: SET THIS
+REPO_SEARCH_PATH = "/path/to/your/repo"  # <--- IMPORTANT: SET THIS
+MUD_REPORT_PATH = "/path/to/your/rc.diff" # <--- IMPORTANT: SET THIS
 COMPILE_ID = "12345"
 
 # ---------------------------------------------------------------------
@@ -73,6 +73,16 @@ def main(stdscr, file_data):
 
     while True:
         screen_height, screen_width = stdscr.getmaxyx(); panel_height = screen_height - 3
+        
+        # --- THE FIX: Defensively check for minimum screen width ---
+        if screen_width < 20: # Arbitrary minimum to prevent layout math from failing
+            stdscr.erase()
+            stdscr.addstr(0, 0, "Window too narrow!", curses.color_pair(6))
+            stdscr.refresh()
+            key = stdscr.getch()
+            if key == ord('q'): break
+            continue
+
         l_w, r_w = int(screen_width*0.25), int(screen_width*0.25); c_w = screen_width - l_w - r_w
         l_p, c_p, r_p = stdscr.derwin(screen_height-1,l_w,1,0), stdscr.derwin(screen_height-1,c_w,1,l_w), stdscr.derwin(screen_height-1,r_w,1,l_w+c_w)
         
@@ -92,10 +102,8 @@ def main(stdscr, file_data):
                 style = curses.color_pair(5) if idx == state["selected_file_idx"] else curses.color_pair(2)
                 l_p.addstr(i+1, 1, os.path.basename(state["file_data"][idx]['filepath']).ljust(l_w-2)[:l_w-2], style)
         
-        # --- THE FIX: Calculate gutter width dynamically ---
         total_lines = len(active_file["content"])
         gutter_width = max(4, math.ceil(math.log10(total_lines + 1)) if total_lines > 0 else 4)
-        
         for i in range(panel_height):
             idx = state["scroll_pos"]["editor"] + i
             if idx < total_lines:
@@ -117,7 +125,6 @@ def main(stdscr, file_data):
         
         if state["active_panel"] == "editor":
             curses.curs_set(1)
-            # Adjust cursor based on dynamic gutter width
             cursor_y, cursor_x = state["cursor_pos"]["y"] - state["scroll_pos"]["editor"] + 1, state["cursor_pos"]["x"] + gutter_width + 3
             if 0 < cursor_y <= panel_height: c_p.move(cursor_y, cursor_x)
         else:

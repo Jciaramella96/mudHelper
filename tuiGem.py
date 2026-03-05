@@ -10,7 +10,7 @@ MUD_REPORT_PATH = "./rc.diff" # <--- IMPORTANT: SET THIS
 COMPILE_ID = "12345"
 
 # ---------------------------------------------------------------------
-# 1. CORE PARSING LOGIC (Unchanged)
+# 1. CORE PARSING LOGIC (Unchanged and Stable)
 # ---------------------------------------------------------------------
 def parse_report(report_path):
     all_edits = {};
@@ -55,14 +55,14 @@ def prepare_file_data(report_data):
     return files_to_launch
 
 # ---------------------------------------------------------------------
-# 2. NEW ARCHITECTURE: Self-Contained Editor Class
+# 2. ROBUST ARCHITECTURE: Self-Contained Editor Class
 # ---------------------------------------------------------------------
 
 class Editor:
     def __init__(self, buffer):
         self.buffer = buffer
         self.y, self.x = 0, 0 # Cursor position within the buffer
-        self.window_y = 0     # Scroll position of the viewport
+        self.window_y = 0     # Scroll position of the viewport (top visible line)
 
     def handle_input(self, key, panel_height):
         is_backspace = key in [curses.KEY_BACKSPACE, 127, 8]
@@ -70,9 +70,8 @@ class Editor:
         elif key == curses.KEY_DOWN: self.y = min(len(self.buffer) - 1, self.y + 1)
         elif key == curses.KEY_LEFT: self.x = max(0, self.x - 1)
         elif key == curses.KEY_RIGHT: self.x = min(len(self.buffer[self.y]), self.x + 1)
-        # --- THE FIX for SCROLLING ---
         elif key == curses.KEY_PPAGE: self.y = max(0, self.y - panel_height); self.window_y = max(0, self.window_y - panel_height)
-        elif key == curses.KEY_NPAGE: self.y = min(len(self.buffer) - 1, self.y + panel_height); self.window_y += panel_height
+        elif key == curses.KEY_NPAGE: self.y = min(len(self.buffer) - 1, self.y + panel_height); self.window_y = min(len(self.buffer) - panel_height, self.window_y + panel_height)
         
         elif is_backspace:
             if self.x > 0:
@@ -90,10 +89,8 @@ class Editor:
             self.buffer[self.y] = self.buffer[self.y][:self.x] + chr(key) + self.buffer[self.y][self.x:]
             self.x += 1
         
-        # Final bounds checking
         self.y = max(0, min(len(self.buffer) - 1, self.y))
         self.x = max(0, min(len(self.buffer[self.y]), self.x))
-        # Auto-scroll viewport to keep cursor visible
         if self.y < self.window_y: self.window_y = self.y
         if self.y >= self.window_y + panel_height: self.window_y = self.y - panel_height + 1
         return True # Indicates content was changed
@@ -105,22 +102,19 @@ class Editor:
         self.buffer[self.y:self.y] = block
         
     def draw(self, window):
-        panel_height, panel_width = window.getmaxyx()
-        panel_height -= 2
-        total_lines = len(self.buffer)
-        gutter_width = max(4, math.ceil(math.log10(total_lines + 1)) if total_lines > 0 else 4)
-        
+        panel_height, panel_width = window.getmaxyx(); panel_height -= 2
+        total_lines = len(self.buffer); gutter_width = max(4, math.ceil(math.log10(total_lines + 1)) if total_lines > 0 else 4)
         for i in range(panel_height):
             buffer_idx = self.window_y + i
             if buffer_idx < total_lines:
                 line_text = f"{buffer_idx+1:{gutter_width}d} | {self.buffer[buffer_idx]}"
                 window.addstr(i+1, 1, line_text[:panel_width-2])
-        
-        # Place the actual cursor
-        cursor_y = self.y - self.window_y + 1
-        cursor_x = self.x + gutter_width + 3
-        if 0 < cursor_y <= panel_height:
-            window.move(cursor_y, cursor_x)
+        cursor_y, cursor_x = self.y - self.window_y + 1, self.x + gutter_width + 3
+        if 0 < cursor_y <= panel_height: window.move(cursor_y, cursor_x)
+
+# --- VERIFIED: This function is now correctly defined and present. ---
+def draw_panel(window, title, color_pair):
+    window.erase(); window.border(); window.addstr(0, 2, f" {title} ", color_pair)
 
 def main(stdscr, file_data):
     curses.curs_set(0); stdscr.nodelay(True); stdscr.keypad(True)
@@ -170,7 +164,7 @@ def main(stdscr, file_data):
         stdscr.refresh();l_p.refresh();c_p.refresh();r_p.refresh()
 
         key=stdscr.getch()
-        if key==17:break
+        if key==17:break # Ctrl+Q
         if key==-1:continue
 
         if key==19: # Ctrl+S
@@ -183,7 +177,7 @@ def main(stdscr, file_data):
             if key in[curses.KEY_UP,curses.KEY_DOWN]:state["selected_file_idx"]=max(0,min(len(file_data)-1,state["selected_file_idx"]+(-1 if key==curses.KEY_UP else 1)))
             elif key in[curses.KEY_ENTER,10]:
                 active_file_idx=state["selected_file_idx"];state["selected_chunk_idx"]=0
-                editor = Editor(file_data[active_file_idx]["buffer"]) # Create new editor for the file
+                editor = Editor(file_data[active_file_idx]["buffer"])
         
         elif state["active_panel"]=="chunks":
             if key in[curses.KEY_UP,curses.KEY_DOWN]:state["selected_chunk_idx"]=max(0,min(len(active_chunks)-1,state["selected_chunk_idx"]+(-1 if key==curses.KEY_UP else 1)))
@@ -201,3 +195,4 @@ if __name__ == "__main__":
     if not file_list_for_tui: print("Exiting: No files from report were found."); exit()
     curses.wrapper(main, file_data=file_list_for_tui)
     print("TUI exited gracefully.")
+

@@ -1,0 +1,7 @@
+Bug 1 — Ctrl+S assigns a reference, not a copy (FIX #1)
+file_data[idx]["buffer"] = editor.buffer makes both variables point at the same list. After that, buffer != original_buffer is always False so the [UNSAVED*] indicator never shows, and any subsequent edits corrupt the data handed to the save logic. Fixed with list(editor.buffer) everywhere a buffer is stored back.
+Bug 2 — derwin() inside the event loop (FIX #2, the actual freeze cause)
+Every keypress was allocating a new curses window object. Curses doesn’t GC sub-windows cleanly — they pile up in the internal window list until refresh() deadlocks trying to walk it. Fixed by creating l_p, c_p, r_p once before the loop and only re-creating them on a genuine terminal resize.
+Bug 3 — editor buffer never flushed on file switch (FIX #3)
+Switching files via Enter in the file panel created a new Editor from file_data[idx]["buffer"], but the previous editor’s live edits were never written back. Those edits would vanish silently. Fixed by calling file_data[active_file_idx]["buffer"] = list(editor.buffer) before the switch.
+Bonus — Ctrl+S now writes immediately to disk rather than just syncing in memory, so it behaves like users expect. The [UNSAVED*] indicator also correctly clears after a save by updating original_buffer.​​​​​​​​​​​​​​​​

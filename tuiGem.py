@@ -50,7 +50,6 @@ def prepare_file_data(report_data):
             for correct_path in correct_paths_list:
                 try:
                     with open(correct_path, 'r', encoding='utf-8') as f: content = f.read()
-                    # Keep original content for checking against changes
                     files_to_launch.append({"filepath": correct_path, "buffer": content.split('\n'), "original_buffer": content.split('\n'), "chunks": report_data[original_full_path]})
                 except Exception: continue
     return files_to_launch
@@ -60,9 +59,8 @@ def prepare_file_data(report_data):
 # ---------------------------------------------------------------------
 class Editor:
     def __init__(self, buffer):
-        self.buffer = list(buffer) # Work on a copy
-        self.y, self.x = 0, 0
-        self.window_y = 0
+        self.buffer = list(buffer)
+        self.y, self.x, self.window_y = 0, 0, 0
 
     def handle_input(self, key, panel_height):
         is_backspace = key in [curses.KEY_BACKSPACE, 127, 8]
@@ -73,19 +71,24 @@ class Editor:
         elif key == curses.KEY_PPAGE: self.y = max(0, self.y - panel_height); self.window_y = max(0, self.window_y - panel_height)
         elif key == curses.KEY_NPAGE: self.y = min(len(self.buffer) - 1, self.y + panel_height); self.window_y = min(len(self.buffer) - panel_height, self.window_y + panel_height)
         elif is_backspace:
-            if self.x>0: self.buffer[self.y]=self.buffer[self.y][:self.x-1]+self.buffer[self.y][self.x:];self.x-=1
-            elif self.y>0: prev_len=len(self.buffer[self.y-1]);self.buffer[self.y-1]+=self.buffer[self.y];del self.buffer[self.y];self.y-=1;self.x=prev_len
-        elif key==10: line_rest=self.buffer[self.y][self.x:];self.buffer[self.y]=self.buffer[self.y][:self.x];self.buffer.insert(self.y+1,line_rest);self.y+=1;self.x=0
-        elif 32<=key<=126: self.buffer[self.y]=self.buffer[self.y][:self.x]+chr(key)+self.buffer[self.y][self.x:];self.x+=1
+            if self.x > 0: self.buffer[self.y] = self.buffer[self.y][:self.x-1] + self.buffer[self.y][self.x:]; self.x -= 1
+            elif self.y > 0:
+                prev_line_len = len(self.buffer[self.y-1]); self.buffer[self.y-1] += self.buffer[self.y]; del self.buffer[self.y]
+                self.y -= 1; self.x = prev_line_len
+        elif key == 10:
+            line_rest = self.buffer[self.y][self.x:]; self.buffer[self.y] = self.buffer[self.y][:self.x]
+            self.buffer.insert(self.y + 1, line_rest); self.y += 1; self.x = 0
+        elif 32 <= key <= 126:
+            self.buffer[self.y] = self.buffer[self.y][:self.x] + chr(key) + self.buffer[self.y][self.x:]; self.x += 1
         
-        self.y=max(0,min(len(self.buffer)-1,self.y));self.x=max(0,min(len(self.buffer[self.y]),self.x))
-        if self.y<self.window_y:self.window_y=self.y
-        if self.y>=self.window_y+panel_height:self.window_y=self.y-panel_height+1
+        self.y = max(0, min(len(self.buffer) - 1, self.y)); self.x = max(0, min(len(self.buffer[self.y]), self.x))
+        if self.y < self.window_y: self.window_y = self.y
+        if self.y >= self.window_y + panel_height: self.window_y = self.y - panel_height + 1
+        return True
 
     def insert_chunk(self, chunk_text):
-        header = f"# {'-'*10} code insert from compile {COMPILE_ID} {'-'*10}"; footer = f"# {'-'*10} end insert from compile {COMPILE_ID} {'-'*10}"
-        block = [header] + chunk_text.split('\n') + [footer]
-        self.buffer[self.y:self.y] = block
+        header, footer = f"# {'-'*10} insert from {COMPILE_ID} {'-'*10}", f"# {'-'*10} end insert {'-'*10}"
+        self.buffer[self.y:self.y] = [header] + chunk_text.split('\n') + [footer]
         
     def draw(self, window):
         panel_height, panel_width = window.getmaxyx(); panel_height -= 2
@@ -100,33 +103,30 @@ def draw_panel(window, title, color_pair):
     window.erase(); window.border(); window.addstr(0, 2, f" {title} ", color_pair)
 
 def main(stdscr, file_data):
-    curses.curs_set(0); stdscr.keypad(True)
-    stdscr.nodelay(False) # Use blocking getch for stability
+    curses.curs_set(0); stdscr.keypad(True); stdscr.nodelay(False)
     curses.start_color()
     curses.init_pair(1,curses.COLOR_CYAN,curses.COLOR_BLACK); curses.init_pair(2,curses.COLOR_WHITE,curses.COLOR_BLACK)
     curses.init_pair(3,curses.COLOR_GREEN,curses.COLOR_BLACK); curses.init_pair(4,curses.COLOR_RED,curses.COLOR_BLACK)
     curses.init_pair(5,curses.COLOR_BLACK,curses.COLOR_CYAN); curses.init_pair(6,curses.COLOR_BLACK,curses.COLOR_YELLOW)
     
-    state = { "active_panel": "files", "selected_file_idx": 0, "selected_chunk_idx": 0, "scroll_pos": {"files": 0, "chunks": 0} }
+    state = {"active_panel": "files", "selected_file_idx": 0, "selected_chunk_idx": 0, "scroll_pos": {"files": 0, "chunks": 0}}
     active_file_idx = 0
     editor = Editor(file_data[active_file_idx]["buffer"])
     
-    # This dictionary will be returned to the main execution block
     final_state = {"should_save": False, "files_to_save": {}}
 
     while True:
         screen_height, screen_width = stdscr.getmaxyx(); panel_height = screen_height - 3
         if screen_width < 20: stdscr.erase(); stdscr.addstr(0,0,"Window too narrow!"); stdscr.refresh(); continue
 
-        # Drawing logic...
-        l_w,r_w=int(screen_width*0.25),int(screen_width*0.25);c_w=screen_width-l_w-r_w
-        l_p,c_p,r_p=stdscr.derwin(screen_height-1,l_w,1,0),stdscr.derwin(screen_height-1,c_w,1,l_w),stdscr.derwin(screen_height-1,r_w,1,l_w+c_w)
+        l_w, r_w = int(screen_width*0.25), int(screen_width*0.25); c_w = screen_width - l_w - r_w
+        l_p, c_p, r_p = stdscr.derwin(screen_height-1,l_w,1,0), stdscr.derwin(screen_height-1,c_w,1,l_w), stdscr.derwin(screen_height-1,r_w,1,l_w+c_w)
         
-        unsaved_changes = file_data[active_file_idx]["buffer"] != file_data[active_file_idx]["original_buffer"]
+        unsaved_changes = editor.buffer != file_data[active_file_idx]["original_buffer"]
         status = "Arrows:Nav|Enter:Select/Edit|Tab:Panels|Ctrl+S:Commit|Ctrl+Q:Quit & Save"
-        if state["active_panel"]=="editor":status="EDIT MODE|Arrows:Cursor|PgUp/PgDn:Scroll|Tab to Exit"
+        if state["active_panel"]=="editor": status = "EDIT MODE|Arrows:Cursor|PgUp/PgDn:Scroll|Tab to Exit"
         if unsaved_changes: status += " [UNSAVED*]"
-        stdscr.addstr(0,0,status.ljust(screen_width),curses.color_pair(6))
+        stdscr.addstr(0, 0, status.ljust(screen_width), curses.color_pair(6))
 
         draw_panel(l_p,"Files",curses.color_pair(1)if state["active_panel"]=="files"else 2)
         draw_panel(c_p,f"Editor: {os.path.basename(file_data[active_file_idx]['filepath'])}",curses.color_pair(1)if state["active_panel"]=="editor"else 2)
@@ -141,7 +141,7 @@ def main(stdscr, file_data):
             h_style=curses.color_pair(5)if i==state["selected_chunk_idx"]and state["active_panel"]=="chunks"else(curses.color_pair(3)if c["action"]=="Added"else 4)
             chunk_draw_list.append((f"Chunk {i+1}: {c['action']} ({c['lines']})",h_style));chunk_draw_list.extend([(f"  > {l}",2)for l in c['code'].split('\n')[:3]]);chunk_draw_list.append(("",2))
         for i in range(panel_height):
-            idx=state["scroll_pos"]["chunks"]+i
+            idx=state["scroll_pos"]["chunks"]+i;
             if idx<len(chunk_draw_list):line,style=chunk_draw_list[idx];r_p.addstr(i+1,1,line[:r_w-2],style)
         
         curses.curs_set(1 if state["active_panel"]=="editor" else 0)
@@ -149,19 +149,23 @@ def main(stdscr, file_data):
 
         key=stdscr.getch()
         
-        # --- THE NEW SAVE & EXIT PATTERN ---
+        # --- THE FIX for SAVE & EXIT ---
         if key == 17: # Ctrl+Q
             final_state["should_save"] = True
-            break # Exit the main while loop
+            # Sync the final state of the current editor buffer before quitting
+            file_data[active_file_idx]["buffer"] = editor.buffer
+            break
         
         if key == 19: # Ctrl+S
             file_data[active_file_idx]["buffer"] = editor.buffer
-            continue
-
-        if key == ord('\t'): state["active_panel"]=["files","editor","chunks"][(["files","editor","chunks"].index(state["active_panel"])+1)%3]
+        elif key == ord('\t'): state["active_panel"]=["files","editor","chunks"][(["files","editor","chunks"].index(state["active_panel"])+1)%3]
         elif state["active_panel"]=="files":
             if key in[curses.KEY_UP,curses.KEY_DOWN]:state["selected_file_idx"]=max(0,min(len(file_data)-1,state["selected_file_idx"]+(-1 if key==curses.KEY_UP else 1)))
             elif key in[curses.KEY_ENTER,10]:
+                # --- THE FIX for SAVING STATE ---
+                # Sync the old editor's buffer before switching
+                file_data[active_file_idx]["buffer"] = editor.buffer
+                # Now load the new file
                 active_file_idx=state["selected_file_idx"];state["selected_chunk_idx"]=0
                 editor = Editor(file_data[active_file_idx]["buffer"])
         elif state["active_panel"]=="chunks":
@@ -172,11 +176,11 @@ def main(stdscr, file_data):
         elif state["active_panel"]=="editor":
             editor.handle_input(key, panel_height)
 
-    # After the loop breaks, return the necessary data
-    for file in file_data:
-        if file["buffer"] != file["original_buffer"]:
-            final_state["files_to_save"][file["filepath"]] = '\n'.join(file["buffer"])
-            
+    # After loop breaks, populate the files_to_save dictionary
+    if final_state["should_save"]:
+        for file in file_data:
+            if file["buffer"] != file["original_buffer"]:
+                final_state["files_to_save"][file["filepath"]] = '\n'.join(file["buffer"])
     return final_state
 
 if __name__ == "__main__":
@@ -185,20 +189,15 @@ if __name__ == "__main__":
     file_list_for_tui = prepare_file_data(report_data)
     if not file_list_for_tui: print("Exiting: No files from report were found."); exit()
 
-    # --- FINAL STEP: SEPARATE UI FROM I/O ---
-    # The wrapper starts the TUI and gets the final state back when it's done.
     final_state = curses.wrapper(main, file_data=file_list_for_tui)
 
-    # After the TUI has completely shut down, perform the file write.
-    if final_state["should_save"] and final_state["files_to_save"]:
+    if final_state and final_state["should_save"] and final_state["files_to_save"]:
         print("\nSaving modified files...")
         for filepath, content in final_state["files_to_save"].items():
             try:
-                with open(filepath, 'w', encoding='utf-8') as f:
-                    f.write(content)
+                with open(filepath, 'w', encoding='utf-8') as f: f.write(content)
                 print(f"  ✅ Saved: {filepath}")
-            except Exception as e:
-                print(f"  ❌ Error saving {filepath}: {e}")
+            except Exception as e: print(f"  ❌ Error saving {filepath}: {e}")
     else:
         print("\nExited without saving any changes.")
 

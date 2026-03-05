@@ -1,0 +1,9 @@
+Traceback (most recent call last):
+  File "/opt/osi/osi_cust/scripts/mud_editor/tuiGem.py", line 214, in <module>
+    curses.wrapper(main, file_data=file_list_for_tui)
+  File "/usr/lib64/python3.12/curses/__init__.py", line 94, in wrapper
+    return func(stdscr, *args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/osi/osi_cust/scripts/mud_editor/tuiGem.py", line 103, in main
+    c_p.addstr(i+1, 1, f"{idx+1:4d} | {active_file['content'][idx]}"[:c_w-2], curses.color_pair(2))
+_curses.error: addwstr() returned ERR

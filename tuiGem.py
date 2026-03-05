@@ -77,7 +77,7 @@ def main(stdscr, file_data):
         l_w, r_w = int(screen_width*0.25), int(screen_width*0.25); c_w = screen_width - l_w - r_w
         l_p, c_p, r_p = stdscr.derwin(screen_height-1,l_w,1,0), stdscr.derwin(screen_height-1,c_w,1,l_w), stdscr.derwin(screen_height-1,r_w,1,l_w+c_w)
         
-        status_text = "Arrows: Navigate | Enter: Select | Tab: Switch | Ctrl+S: Save | u: Undo | q: Quit"
+        status_text = "Arrows: Navigate | Enter: Select | Tab: Panels | PgUp/PgDn: Scroll | Ctrl+S: Save | q: Quit"
         if state["active_panel"] == "editor":
             status_text = "EDIT MODE | Arrows: Move Cursor | PgUp/PgDn: Scroll Editor | Tab to Exit"
         if state["unsaved_changes"]:
@@ -89,38 +89,31 @@ def main(stdscr, file_data):
         draw_panel(c_p, f"Editor: {os.path.basename(active_file['filepath'])}", curses.color_pair(1) if state["active_panel"] == "editor" else curses.color_pair(2))
         draw_panel(r_p, "Chunks", curses.color_pair(1) if state["active_panel"] == "chunks" else curses.color_pair(2))
         
-        # --- Left Panel ---
+        # Panels drawing logic (unchanged)...
         for i in range(panel_height):
             idx = state["scroll_pos"]["files"] + i
             if idx < len(state["file_data"]):
                 style = curses.color_pair(5) if idx == state["selected_file_idx"] else curses.color_pair(2)
                 l_p.addstr(i+1, 1, os.path.basename(state["file_data"][idx]['filepath']).ljust(l_w-2)[:l_w-2], style)
-        
-        # --- Center Panel ---
         for i in range(panel_height):
             idx = state["scroll_pos"]["editor"] + i
             if idx < len(active_file["content"]):
                 c_p.addstr(i+1, 1, f"{idx+1:4d} | {active_file['content'][idx]}"[:c_w-2], curses.color_pair(2))
-
-        # --- Right Panel ---
         chunk_draw_list = []
         for i, chunk in enumerate(active_file["chunks"]):
             header_style = curses.color_pair(5) if i == state["selected_chunk_idx"] and state["active_panel"] == "chunks" else (curses.color_pair(3) if chunk["action"] == "Added" else curses.color_pair(4))
             chunk_draw_list.append((f"Chunk {i+1}: {chunk['action']}", header_style))
             chunk_draw_list.extend([(f"  > {line}", curses.color_pair(2)) for line in chunk['code'].split('\n')[:3]])
             chunk_draw_list.append(("", curses.color_pair(2)))
-        
         for i in range(panel_height):
             idx = state["scroll_pos"]["chunks"] + i
             if idx < len(chunk_draw_list):
                 line, style = chunk_draw_list[idx]
                 r_p.addstr(i+1, 1, line[:r_w-2], style)
         
-        # --- Cursor Logic ---
         if state["active_panel"] == "editor":
             curses.curs_set(1)
-            cursor_y = state["cursor_pos"]["y"] - state["scroll_pos"]["editor"] + 1
-            cursor_x = state["cursor_pos"]["x"] + 8
+            cursor_y, cursor_x = state["cursor_pos"]["y"] - state["scroll_pos"]["editor"] + 1, state["cursor_pos"]["x"] + 8
             if 0 < cursor_y <= panel_height: c_p.move(cursor_y, cursor_x)
         else:
             curses.curs_set(0)
@@ -128,13 +121,10 @@ def main(stdscr, file_data):
         stdscr.refresh(); l_p.refresh(); c_p.refresh(); r_p.refresh()
 
         key = stdscr.getch()
-        if key == ord('q'):
-            if state["unsaved_changes"]:
-                # In a future version, we could add a "save changes?" prompt here
-                pass
-            break
+        if key == ord('q'): break
         
-        # --- Global Key Handlers ---
+        if key == -1: continue # No input
+
         if key == 19: # Ctrl+S
             with open(active_file["filepath"], 'w', encoding='utf-8') as f: f.write('\n'.join(active_file["content"]))
             state["unsaved_changes"] = False
@@ -144,12 +134,10 @@ def main(stdscr, file_data):
             continue
         elif key == ord('u'):
             if active_file.get("backup_content"):
-                active_file["content"] = active_file["backup_content"]
-                active_file["backup_content"] = None
+                active_file["content"], active_file["backup_content"] = active_file["backup_content"], None
                 state["unsaved_changes"] = True
             continue
 
-        # --- Panel-Specific Key Handlers ---
         ap = state["active_panel"]
         if ap == "files":
             delta = -1 if key == curses.KEY_UP else 1
@@ -159,8 +147,8 @@ def main(stdscr, file_data):
                 if state["selected_file_idx"] >= state["scroll_pos"]["files"]+panel_height: state["scroll_pos"]["files"] = state["selected_file_idx"]-panel_height+1
             elif key in [curses.KEY_ENTER, 10]:
                 if not state["unsaved_changes"]:
-                    state["active_file_idx"] = state["selected_file_idx"]
-                    state["scroll_pos"]["editor"], state["scroll_pos"]["chunks"], state["selected_chunk_idx"] = 0, 0, 0
+                    state["active_file_idx"], state["selected_chunk_idx"] = state["selected_file_idx"], 0
+                    state["scroll_pos"]["editor"], state["scroll_pos"]["chunks"] = 0, 0
                     state["cursor_pos"] = {"y": 0, "x": 0}
         
         elif ap == "chunks":
@@ -174,25 +162,26 @@ def main(stdscr, file_data):
                     header = f"# {'-'*10} code insert from compile {COMPILE_ID} {'-'*10}"
                     footer = f"# {'-'*10} end insert from compile {COMPILE_ID} {'-'*10}"
                     block = [header] + chunk["code"].split('\n') + [footer]
-                    # Insert at cursor position, not scroll position
                     active_file["content"][state["cursor_pos"]["y"]:state["cursor_pos"]["y"]] = block
                     state["unsaved_changes"] = True
-
+        
         elif ap == "editor":
             y, x = state["cursor_pos"]["y"], state["cursor_pos"]["x"]
+            # --- THE FIX: Check for all common backspace key codes ---
+            is_backspace = key in [curses.KEY_BACKSPACE, 127, 8]
+
             if key == curses.KEY_UP: state["cursor_pos"]["y"] = max(0, y - 1)
             elif key == curses.KEY_DOWN: state["cursor_pos"]["y"] = min(len(active_file["content"]) - 1, y + 1)
             elif key == curses.KEY_LEFT: state["cursor_pos"]["x"] = max(0, x - 1)
             elif key == curses.KEY_RIGHT: state["cursor_pos"]["x"] = min(len(active_file["content"][y]), x + 1)
             elif key == curses.KEY_PPAGE: state["scroll_pos"]["editor"] = max(0, state["scroll_pos"]["editor"] - panel_height)
             elif key == curses.KEY_NPAGE: state["scroll_pos"]["editor"] += panel_height
-            # --- Text Editing Logic ---
-            elif key in [curses.KEY_BACKSPACE, 127]:
+            elif is_backspace:
                 state["unsaved_changes"] = True
                 if x > 0:
                     active_file["content"][y] = active_file["content"][y][:x-1] + active_file["content"][y][x:]
                     state["cursor_pos"]["x"] -= 1
-                elif y > 0: # Backspace at start of line
+                elif y > 0:
                     prev_line_len = len(active_file["content"][y-1])
                     active_file["content"][y-1] += active_file["content"][y]
                     del active_file["content"][y]
@@ -208,10 +197,8 @@ def main(stdscr, file_data):
                 active_file["content"][y] = active_file["content"][y][:x] + chr(key) + active_file["content"][y][x:]
                 state["cursor_pos"]["x"] += 1
             
-            # Ensure cursor x is not out of bounds after moving vertically
             y = state["cursor_pos"]["y"]
             state["cursor_pos"]["x"] = min(len(active_file["content"][y]), state["cursor_pos"]["x"])
-            # Auto-scroll editor to keep cursor in view
             if y < state["scroll_pos"]["editor"]: state["scroll_pos"]["editor"] = y
             if y >= state["scroll_pos"]["editor"] + panel_height: state["scroll_pos"]["editor"] = y - panel_height + 1
 
@@ -221,3 +208,4 @@ if __name__ == "__main__":
     file_list_for_tui = prepare_file_data(report_data)
     if not file_list_for_tui: print("Exiting: No files from report were found."); exit()
     curses.wrapper(main, file_data=file_list_for_tui)
+

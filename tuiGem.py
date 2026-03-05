@@ -89,22 +89,28 @@ def main(stdscr, file_data):
         draw_panel(c_p, f"Editor: {os.path.basename(active_file['filepath'])}", curses.color_pair(1) if state["active_panel"] == "editor" else curses.color_pair(2))
         draw_panel(r_p, "Chunks", curses.color_pair(1) if state["active_panel"] == "chunks" else curses.color_pair(2))
         
-        # Panels drawing logic (unchanged)...
+        # Left Panel (Files)
         for i in range(panel_height):
             idx = state["scroll_pos"]["files"] + i
             if idx < len(state["file_data"]):
                 style = curses.color_pair(5) if idx == state["selected_file_idx"] else curses.color_pair(2)
                 l_p.addstr(i+1, 1, os.path.basename(state["file_data"][idx]['filepath']).ljust(l_w-2)[:l_w-2], style)
+        
+        # Center Panel (Editor)
         for i in range(panel_height):
             idx = state["scroll_pos"]["editor"] + i
             if idx < len(active_file["content"]):
                 c_p.addstr(i+1, 1, f"{idx+1:4d} | {active_file['content'][idx]}"[:c_w-2], curses.color_pair(2))
+
+        # Right Panel (Chunks)
         chunk_draw_list = []
         for i, chunk in enumerate(active_file["chunks"]):
             header_style = curses.color_pair(5) if i == state["selected_chunk_idx"] and state["active_panel"] == "chunks" else (curses.color_pair(3) if chunk["action"] == "Added" else curses.color_pair(4))
-            chunk_draw_list.append((f"Chunk {i+1}: {chunk['action']}", header_style))
+            # --- THE FIX: Add the line numbers to the chunk header ---
+            chunk_draw_list.append((f"Chunk {i+1}: {chunk['action']} (Lines: {chunk['lines']})", header_style))
             chunk_draw_list.extend([(f"  > {line}", curses.color_pair(2)) for line in chunk['code'].split('\n')[:3]])
             chunk_draw_list.append(("", curses.color_pair(2)))
+        
         for i in range(panel_height):
             idx = state["scroll_pos"]["chunks"] + i
             if idx < len(chunk_draw_list):
@@ -122,8 +128,7 @@ def main(stdscr, file_data):
 
         key = stdscr.getch()
         if key == ord('q'): break
-        
-        if key == -1: continue # No input
+        if key == -1: continue
 
         if key == 19: # Ctrl+S
             with open(active_file["filepath"], 'w', encoding='utf-8') as f: f.write('\n'.join(active_file["content"]))
@@ -164,10 +169,9 @@ def main(stdscr, file_data):
                     block = [header] + chunk["code"].split('\n') + [footer]
                     active_file["content"][state["cursor_pos"]["y"]:state["cursor_pos"]["y"]] = block
                     state["unsaved_changes"] = True
-        
+
         elif ap == "editor":
             y, x = state["cursor_pos"]["y"], state["cursor_pos"]["x"]
-            # --- THE FIX: Check for all common backspace key codes ---
             is_backspace = key in [curses.KEY_BACKSPACE, 127, 8]
 
             if key == curses.KEY_UP: state["cursor_pos"]["y"] = max(0, y - 1)
@@ -192,7 +196,7 @@ def main(stdscr, file_data):
                 active_file["content"][y] = active_file["content"][y][:x]
                 active_file["content"].insert(y + 1, line_rest)
                 state["cursor_pos"]["y"] += 1; state["cursor_pos"]["x"] = 0
-            elif 32 <= key <= 126: # Printable characters
+            elif 32 <= key <= 126:
                 state["unsaved_changes"] = True
                 active_file["content"][y] = active_file["content"][y][:x] + chr(key) + active_file["content"][y][x:]
                 state["cursor_pos"]["x"] += 1

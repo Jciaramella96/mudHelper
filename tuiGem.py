@@ -2,6 +2,7 @@ import curses
 import os
 import re
 import math
+import time # Needed for the non-blocking save message
 
 # --- Configuration ---
 REPO_SEARCH_PATH = "/opt/osi/osi_cust"  # <--- IMPORTANT: SET THIS
@@ -73,15 +74,9 @@ def main(stdscr, file_data):
 
     while True:
         screen_height, screen_width = stdscr.getmaxyx(); panel_height = screen_height - 3
-        
-        # --- THE FIX: Defensively check for minimum screen width ---
-        if screen_width < 20: # Arbitrary minimum to prevent layout math from failing
-            stdscr.erase()
-            stdscr.addstr(0, 0, "Window too narrow!", curses.color_pair(6))
-            stdscr.refresh()
-            key = stdscr.getch()
-            if key == ord('q'): break
-            continue
+        if screen_width < 20:
+            stdscr.erase(); stdscr.addstr(0, 0, "Window too narrow!"); stdscr.refresh()
+            time.sleep(0.1); continue
 
         l_w, r_w = int(screen_width*0.25), int(screen_width*0.25); c_w = screen_width - l_w - r_w
         l_p, c_p, r_p = stdscr.derwin(screen_height-1,l_w,1,0), stdscr.derwin(screen_height-1,c_w,1,l_w), stdscr.derwin(screen_height-1,r_w,1,l_w+c_w)
@@ -119,16 +114,13 @@ def main(stdscr, file_data):
         
         for i in range(panel_height):
             idx = state["scroll_pos"]["chunks"] + i
-            if idx < len(chunk_draw_list):
-                line, style = chunk_draw_list[idx]
-                r_p.addstr(i+1, 1, line[:r_w-2], style)
+            if idx < len(chunk_draw_list): line, style = chunk_draw_list[idx]; r_p.addstr(i+1, 1, line[:r_w-2], style)
         
         if state["active_panel"] == "editor":
             curses.curs_set(1)
             cursor_y, cursor_x = state["cursor_pos"]["y"] - state["scroll_pos"]["editor"] + 1, state["cursor_pos"]["x"] + gutter_width + 3
             if 0 < cursor_y <= panel_height: c_p.move(cursor_y, cursor_x)
-        else:
-            curses.curs_set(0)
+        else: curses.curs_set(0)
 
         stdscr.refresh(); l_p.refresh(); c_p.refresh(); r_p.refresh()
 
@@ -136,75 +128,79 @@ def main(stdscr, file_data):
         if key == ord('q'): break
         if key == -1: continue
 
-        if key == 19:
+        # --- THE FIX: Handle save as a standard operation, not a special case ---
+        if key == 19: # Ctrl+S
             with open(active_file["filepath"], 'w', encoding='utf-8') as f: f.write('\n'.join(active_file["content"]))
             state["unsaved_changes"] = False
-            continue
-        elif key == ord('\t'):
-            state["active_panel"] = ["files", "editor", "chunks"][(["files", "editor", "chunks"].index(state["active_panel"]) + 1) % 3]
-            continue
+            # Display a temporary "SAVED!" message
+            stdscr.addstr(0, screen_width - 10, "SAVED!".ljust(9), curses.color_pair(6))
+            stdscr.refresh()
+            time.sleep(0.75) # Pause briefly to make the message readable
+        
+        elif key == ord('\t'): state["active_panel"] = ["files", "editor", "chunks"][(["files", "editor", "chunks"].index(state["active_panel"]) + 1) % 3]
         elif key == ord('u'):
             if active_file.get("backup_content"):
                 active_file["content"], active_file["backup_content"] = active_file["backup_content"], None
                 state["unsaved_changes"] = True
-            continue
-
-        ap = state["active_panel"]
-        if ap == "files":
-            delta = -1 if key == curses.KEY_UP else 1
-            if key in [curses.KEY_UP, curses.KEY_DOWN]:
-                state["selected_file_idx"] = max(0, min(len(file_data)-1, state["selected_file_idx"]+delta))
-                if state["selected_file_idx"] < state["scroll_pos"]["files"]: state["scroll_pos"]["files"] = state["selected_file_idx"]
-                if state["selected_file_idx"] >= state["scroll_pos"]["files"]+panel_height: state["scroll_pos"]["files"] = state["selected_file_idx"]-panel_height+1
-            elif key in [curses.KEY_ENTER, 10]:
-                if not state["unsaved_changes"]:
-                    state["active_file_idx"], state["selected_chunk_idx"] = state["selected_file_idx"], 0
-                    state["scroll_pos"]["editor"], state["scroll_pos"]["chunks"] = 0, 0
-                    state["cursor_pos"] = {"y": 0, "x": 0}
         
-        elif ap == "chunks":
-            delta = -1 if key == curses.KEY_UP else 1
-            if key in [curses.KEY_UP, curses.KEY_DOWN]:
-                state["selected_chunk_idx"] = max(0, min(len(active_file["chunks"])-1, state["selected_chunk_idx"]+delta))
-            elif key in [curses.KEY_ENTER, 10]:
-                chunk = active_file["chunks"][state["selected_chunk_idx"]]
-                if chunk["action"] == "Added":
-                    active_file["backup_content"] = list(active_file["content"])
-                    header, footer = f"# {'-'*10} insert from {COMPILE_ID} {'-'*10}", f"# {'-'*10} end insert {'-'*10}"
-                    block = [header] + chunk["code"].split('\n') + [footer]
-                    active_file["content"][state["cursor_pos"]["y"]:state["cursor_pos"]["y"]] = block
-                    state["unsaved_changes"] = True
-
-        elif ap == "editor":
-            y, x = state["cursor_pos"]["y"], state["cursor_pos"]["x"]
-            is_backspace = key in [curses.KEY_BACKSPACE, 127, 8]
-            if key == curses.KEY_UP: state["cursor_pos"]["y"] = max(0, y - 1)
-            elif key == curses.KEY_DOWN: state["cursor_pos"]["y"] = min(len(active_file["content"]) - 1, y + 1)
-            elif key == curses.KEY_LEFT: state["cursor_pos"]["x"] = max(0, x - 1)
-            elif key == curses.KEY_RIGHT: state["cursor_pos"]["x"] = min(len(active_file["content"][y]), x + 1)
-            elif key == curses.KEY_PPAGE: state["scroll_pos"]["editor"] = max(0, state["scroll_pos"]["editor"] - panel_height)
-            elif key == curses.KEY_NPAGE: state["scroll_pos"]["editor"] += panel_height
-            elif is_backspace:
-                state["unsaved_changes"] = True
-                if x > 0: active_file["content"][y] = active_file["content"][y][:x-1] + active_file["content"][y][x:]; state["cursor_pos"]["x"] -= 1
-                elif y > 0:
-                    prev_line_len = len(active_file["content"][y-1])
-                    active_file["content"][y-1] += active_file["content"][y]; del active_file["content"][y]
-                    state["cursor_pos"]["y"] -= 1; state["cursor_pos"]["x"] = prev_line_len
-            elif key == 10:
-                state["unsaved_changes"] = True
-                line_rest = active_file["content"][y][x:]; active_file["content"][y] = active_file["content"][y][:x]
-                active_file["content"].insert(y + 1, line_rest)
-                state["cursor_pos"]["y"] += 1; state["cursor_pos"]["x"] = 0
-            elif 32 <= key <= 126:
-                state["unsaved_changes"] = True
-                active_file["content"][y] = active_file["content"][y][:x] + chr(key) + active_file["content"][y][x:]
-                state["cursor_pos"]["x"] += 1
+        # ... rest of the input handling logic is unchanged ...
+        else:
+            ap = state["active_panel"]
+            if ap == "files":
+                delta = -1 if key == curses.KEY_UP else 1
+                if key in [curses.KEY_UP, curses.KEY_DOWN]:
+                    state["selected_file_idx"] = max(0, min(len(file_data)-1, state["selected_file_idx"]+delta))
+                    if state["selected_file_idx"] < state["scroll_pos"]["files"]: state["scroll_pos"]["files"] = state["selected_file_idx"]
+                    if state["selected_file_idx"] >= state["scroll_pos"]["files"]+panel_height: state["scroll_pos"]["files"] = state["selected_file_idx"]-panel_height+1
+                elif key in [curses.KEY_ENTER, 10]:
+                    if not state["unsaved_changes"]:
+                        state["active_file_idx"], state["selected_chunk_idx"] = state["selected_file_idx"], 0
+                        state["scroll_pos"]["editor"], state["scroll_pos"]["chunks"] = 0, 0
+                        state["cursor_pos"] = {"y": 0, "x": 0}
             
-            y = state["cursor_pos"]["y"]
-            state["cursor_pos"]["x"] = min(len(active_file["content"][y]), state["cursor_pos"]["x"])
-            if y < state["scroll_pos"]["editor"]: state["scroll_pos"]["editor"] = y
-            if y >= state["scroll_pos"]["editor"] + panel_height: state["scroll_pos"]["editor"] = y - panel_height + 1
+            elif ap == "chunks":
+                delta = -1 if key == curses.KEY_UP else 1
+                if key in [curses.KEY_UP, curses.KEY_DOWN]:
+                    state["selected_chunk_idx"] = max(0, min(len(active_file["chunks"])-1, state["selected_chunk_idx"]+delta))
+                elif key in [curses.KEY_ENTER, 10]:
+                    chunk = active_file["chunks"][state["selected_chunk_idx"]]
+                    if chunk["action"] == "Added":
+                        active_file["backup_content"] = list(active_file["content"])
+                        header, footer = f"# {'-'*10} insert from {COMPILE_ID} {'-'*10}", f"# {'-'*10} end insert {'-'*10}"
+                        block = [header] + chunk["code"].split('\n') + [footer]
+                        active_file["content"][state["cursor_pos"]["y"]:state["cursor_pos"]["y"]] = block
+                        state["unsaved_changes"] = True
+
+            elif ap == "editor":
+                y, x = state["cursor_pos"]["y"], state["cursor_pos"]["x"]
+                is_backspace = key in [curses.KEY_BACKSPACE, 127, 8]
+                if key == curses.KEY_UP: state["cursor_pos"]["y"] = max(0, y - 1)
+                elif key == curses.KEY_DOWN: state["cursor_pos"]["y"] = min(len(active_file["content"]) - 1, y + 1)
+                elif key == curses.KEY_LEFT: state["cursor_pos"]["x"] = max(0, x - 1)
+                elif key == curses.KEY_RIGHT: state["cursor_pos"]["x"] = min(len(active_file["content"][y]), x + 1)
+                elif key == curses.KEY_PPAGE: state["scroll_pos"]["editor"] = max(0, state["scroll_pos"]["editor"] - panel_height)
+                elif key == curses.KEY_NPAGE: state["scroll_pos"]["editor"] += panel_height
+                elif is_backspace:
+                    state["unsaved_changes"] = True
+                    if x > 0: active_file["content"][y] = active_file["content"][y][:x-1] + active_file["content"][y][x:]; state["cursor_pos"]["x"] -= 1
+                    elif y > 0:
+                        prev_line_len = len(active_file["content"][y-1])
+                        active_file["content"][y-1] += active_file["content"][y]; del active_file["content"][y]
+                        state["cursor_pos"]["y"] -= 1; state["cursor_pos"]["x"] = prev_line_len
+                elif key == 10:
+                    state["unsaved_changes"] = True
+                    line_rest = active_file["content"][y][x:]; active_file["content"][y] = active_file["content"][y][:x]
+                    active_file["content"].insert(y + 1, line_rest)
+                    state["cursor_pos"]["y"] += 1; state["cursor_pos"]["x"] = 0
+                elif 32 <= key <= 126:
+                    state["unsaved_changes"] = True
+                    active_file["content"][y] = active_file["content"][y][:x] + chr(key) + active_file["content"][y][x:]
+                    state["cursor_pos"]["x"] += 1
+                
+                y = state["cursor_pos"]["y"]
+                state["cursor_pos"]["x"] = min(len(active_file["content"][y]), state["cursor_pos"]["x"])
+                if y < state["scroll_pos"]["editor"]: state["scroll_pos"]["editor"] = y
+                if y >= state["scroll_pos"]["editor"] + panel_height: state["scroll_pos"]["editor"] = y - panel_height + 1
 
 if __name__ == "__main__":
     report_data = parse_report(MUD_REPORT_PATH)
@@ -212,3 +208,4 @@ if __name__ == "__main__":
     file_list_for_tui = prepare_file_data(report_data)
     if not file_list_for_tui: print("Exiting: No files from report were found."); exit()
     curses.wrapper(main, file_data=file_list_for_tui)
+

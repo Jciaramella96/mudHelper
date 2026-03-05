@@ -118,10 +118,12 @@ def main(stdscr, file_data):
     l_p, c_p, r_p = stdscr.derwin(screen_height - 1, l_w, 1, 0), stdscr.derwin(screen_height - 1, c_w, 1, l_w), stdscr.derwin(screen_height - 1, r_w, 1, l_w + c_w)
 
     while True:
+        # Before any drawing, get the current size. This handles the initial case and resizes.
+        screen_height, screen_width = stdscr.getmaxyx()
         panel_height = screen_height - 3
+        
         unsaved_changes = editor.buffer != file_data[active_file_idx]["original_buffer"]
         
-        # --- STATUS BAR LOGIC (Same as before) ---
         status = "Arrows:Nav|Enter:Select/Edit|Tab:Panels|Ctrl+S:Save|Ctrl+Q:Quit"
         if state["active_panel"] == "editor": status = "EDIT MODE|Arrows:Cursor|PgUp/PgDn:Scroll|Tab to Exit"
         if unsaved_changes: status += " [UNSAVED*]"
@@ -132,39 +134,51 @@ def main(stdscr, file_data):
             save_message = ""
             stdscr.addstr(0, 0, status.ljust(screen_width), curses.color_pair(6))
 
-        # --- DRAWING LOGIC (Same as before) ---
         draw_panel(l_p, "Files", curses.color_pair(1) if state["active_panel"] == "files" else 2)
         draw_panel(c_p, f"Editor: {os.path.basename(file_data[active_file_idx]['filepath'])}", curses.color_pair(1) if state["active_panel"] == "editor" else 2)
         draw_panel(r_p, "Chunks", curses.color_pair(1) if state["active_panel"] == "chunks" else 2)
+        
         for i in range(panel_height):
             idx = state["scroll_pos"]["files"] + i
             if idx < len(file_data): l_p.addstr(i + 1, 1, os.path.basename(file_data[idx]['filepath']).ljust(l_w - 2)[:l_w - 2], curses.color_pair(5) if idx == state["selected_file_idx"] else 2)
+        
         editor.draw(c_p)
+        
         active_chunks = file_data[active_file_idx]["chunks"]; chunk_draw_list = []
         for i, c in enumerate(active_chunks):
             h_style = curses.color_pair(5) if i == state["selected_chunk_idx"] and state["active_panel"] == "chunks" else (curses.color_pair(3) if c["action"] == "Added" else 4)
             chunk_draw_list.append((f"Chunk {i+1}: {c['action']} ({c['lines']})", h_style)); chunk_draw_list.extend([(f"  > {l}", 2) for l in c['code'].split('\n')[:3]]); chunk_draw_list.append(("", 2))
+        
         for i in range(panel_height):
             idx = state["scroll_pos"]["chunks"] + i
             if idx < len(chunk_draw_list): line, style = chunk_draw_list[idx]; r_p.addstr(i + 1, 1, line[:r_w - 2], style)
         
         curses.curs_set(1 if state["active_panel"] == "editor" else 0)
+        
         stdscr.refresh(); l_p.refresh(); c_p.refresh(); r_p.refresh()
         
         key = stdscr.getch()
         
-        # --- Corrected Input Handling Logic ---
-
-        # 1. Handle Global keys first
         if key == 17: # Ctrl+Q
             break
         elif key == curses.KEY_RESIZE:
+            # --- THIS IS THE FIX ---
             screen_height, screen_width = stdscr.getmaxyx()
             l_w, r_w = int(screen_width * 0.25), int(screen_width * 0.25); c_w = screen_width - l_w - r_w
-            l_p.resize(screen_height - 1, l_w); c_p.resize(screen_height - 1, c_w); r_p.resize(screen_height - 1, r_w)
-            c_p.mvwin(1, l_w); r_p.mvwin(1, l_w + c_w)
+            
+            # Resize panels
+            l_p.resize(screen_height - 1, l_w)
+            c_p.resize(screen_height - 1, c_w)
+            r_p.resize(screen_height - 1, r_w)
+            
+            # Move panels to their new positions
+            c_p.mvwin(1, l_w)
+            r_p.mvwin(1, l_w + c_w)
+            
+            # Clear and REFRESH the main screen before continuing
             stdscr.clear()
-            continue
+            stdscr.refresh() 
+            continue # Continue to the next loop to redraw everything correctly
         elif key == 19: # Ctrl+S
             try:
                 with open(file_data[active_file_idx]['filepath'], 'w', encoding='utf-8') as f:
@@ -175,31 +189,24 @@ def main(stdscr, file_data):
             except Exception as e:
                 save_message = f"ERROR: Could not save file! {e}"
                 save_message_time = time.time()
-        
-        # --- THIS IS THE FIX ---
         elif key == ord('\t'):
             state["active_panel"] = ["files", "editor", "chunks"][ (["files", "editor", "chunks"].index(state["active_panel"]) + 1) % 3 ]
-        
-        # 2. If not a global key, handle panel-specific keys
         else:
             if state["active_panel"] == "files":
-                if key in [curses.KEY_UP, curses.KEY_DOWN]:
-                    state["selected_file_idx"] = max(0, min(len(file_data) - 1, state["selected_file_idx"] + (-1 if key == curses.KEY_UP else 1)))
+                if key in [curses.KEY_UP, curses.KEY_DOWN]: state["selected_file_idx"] = max(0, min(len(file_data) - 1, state["selected_file_idx"] + (-1 if key == curses.KEY_UP else 1)))
                 elif key in [curses.KEY_ENTER, 10]:
                     file_data[active_file_idx]["buffer"] = list(editor.buffer)
-                    active_file_idx = state["selected_file_idx"]
-                    state["selected_chunk_idx"] = 0
+                    active_file_idx = state["selected_file_idx"]; state["selected_chunk_idx"] = 0
                     editor = Editor(file_data[active_file_idx]["buffer"])
-            
             elif state["active_panel"] == "chunks":
-                if key in [curses.KEY_UP, curses.KEY_DOWN]:
-                    state["selected_chunk_idx"] = max(0, min(len(active_chunks) - 1, state["selected_chunk_idx"] + (-1 if key == curses.KEY_UP else 1)))
+                if key in [curses.KEY_UP, curses.KEY_DOWN]: state["selected_chunk_idx"] = max(0, min(len(active_chunks) - 1, state["selected_chunk_idx"] + (-1 if key == curses.KEY_UP else 1)))
                 elif key in [curses.KEY_ENTER, 10]:
-                    chunk = active_chunks[state["selected_chunk_idx"]]
-                    if chunk["action"] == "Added": editor.insert_chunk(chunk["code"])
-
+                    if active_chunks:
+                        chunk = active_chunks[state["selected_chunk_idx"]]
+                        if chunk["action"] == "Added": editor.insert_chunk(chunk["code"])
             elif state["active_panel"] == "editor":
                 editor.handle_input(key, panel_height)
+
 
 
 # --- The rest of your script remains unchanged ---

@@ -79,11 +79,17 @@ def find_text_robustly(editor_lines, text_to_find):
 
 def main(stdscr, file_data):
     curses.curs_set(0); stdscr.nodelay(True); stdscr.keypad(True)
-    curses.start_color(); curses.use_default_colors()
-    curses.init_pair(1, curses.COLOR_CYAN, -1); curses.init_pair(2, curses.COLOR_WHITE, -1)
-    curses.init_pair(3, curses.COLOR_GREEN, -1); curses.init_pair(4, curses.COLOR_RED, -1)
-    curses.init_pair(5, curses.COLOR_BLACK, curses.COLOR_CYAN); curses.init_pair(6, curses.COLOR_BLACK, curses.COLOR_YELLOW)
-    curses.init_pair(7, curses.COLOR_YELLOW, -1)
+    
+    # --- THE FIX: Explicitly define the background color ---
+    curses.start_color()
+    # Define color pairs with an explicit BLACK background
+    curses.init_pair(1, curses.COLOR_CYAN, curses.COLOR_BLACK)   # Active Panel Title
+    curses.init_pair(2, curses.COLOR_WHITE, curses.COLOR_BLACK)  # Normal Text
+    curses.init_pair(3, curses.COLOR_GREEN, curses.COLOR_BLACK)  # Added Chunk
+    curses.init_pair(4, curses.COLOR_RED, curses.COLOR_BLACK)    # Removed Chunk
+    curses.init_pair(5, curses.COLOR_BLACK, curses.COLOR_CYAN)   # Highlighted Item
+    curses.init_pair(6, curses.COLOR_BLACK, curses.COLOR_YELLOW) # Status Bar
+    curses.init_pair(7, curses.COLOR_YELLOW, curses.COLOR_BLACK) # Highlighted deletion text
 
     state = { "file_data": file_data, "active_panel": "files", "active_file_idx": 0, "selected_file_idx": 0,
               "selected_chunk_idx": 0, "scroll_pos": {"files": 0, "editor": 0, "chunks": 0}, "confirm_delete_line": -1 }
@@ -187,3 +193,4 @@ if __name__ == "__main__":
     file_list_for_tui = prepare_file_data(report_data)
     if not file_list_for_tui: print("Exiting: No files from report were found."); exit()
     curses.wrapper(main, file_data=file_list_for_tui)
+

@@ -1,4 +1,9 @@
-  File "/opt/osi/osi_cust/scripts/mud_editor/tuiGem.py", line 128
-    nonlocal final_content_to_save
-    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-SyntaxError: name 'final_content_to_save' is assigned to before nonlocal declaration
+
+ File "/opt/osi/osi_cust/scripts/mud_editor/tuiGem.py", line 190, in <module>
+    final_state = curses.wrapper(main, file_data=file_list_for_tui)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.12/curses/__init__.py", line 94, in wrapper
+    return func(stdscr, *args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/osi/osi_cust/scripts/mud_editor/tuiGem.py", line 147, in main
+    curses.curs_set(1 if state["active_panel"]=="editor" else 0)

@@ -1,0 +1,184 @@
+import glob
+import os
+import argparse
+import time
+import platform
+
+# -------------------------------------------------------
+# OS detection and root path setup
+# -------------------------------------------------------
+
+SYSTEM = platform.system()
+
+if SYSTEM == "Windows":
+    OSI_ROOT = r"D:\osi"
+else:
+    OSI_ROOT = "/opt/osi"
+
+print(f"[INFO] Detected OS: {SYSTEM}")
+print(f"[INFO] Using OSI root: {OSI_ROOT}")
+
+# -------------------------------------------------------
+# Utility functions
+# -------------------------------------------------------
+
+def safe_find(pattern):
+    """
+    Return a list of matched files safely.
+    If the base directory doesn't exist, return empty list.
+    """
+    base_path = pattern.split('*')[0].rstrip(os.sep)
+
+    if not os.path.exists(base_path):
+        print(f"[NOT FOUND] Base path does not exist: {base_path}")
+        return []
+
+    return glob.glob(pattern, recursive=True)
+
+
+def is_older_than_days(filepath, days=30):
+    """
+    Returns True if the file's last modification time
+    is more than `days` days ago.
+    Uses mtime (not ctime) for consistent behavior on Windows and Linux.
+    """
+    try:
+        mtime = os.path.getmtime(filepath)
+        age_seconds = time.time() - mtime
+        return age_seconds > (days * 86400)
+    except OSError:
+        return False
+
+
+def process(description, pattern, delete=False, min_age_days=None):
+    """
+    Finds files and optionally deletes them.
+    If min_age_days is set, only files older than that many days are matched.
+    """
+    print(f"\n=== {description} ===")
+    matches = safe_find(pattern)
+
+    if not matches:
+        print("[EMPTY] No files found.")
+        return
+
+    if min_age_days is not None:
+        filtered = []
+        for path in matches:
+            if os.path.isfile(path) and is_older_than_days(path, min_age_days):
+                filtered.append(path)
+            elif os.path.isfile(path):
+                print(f"[TOO NEW] {path}")
+        matches = filtered
+
+        if not matches:
+            print(f"[EMPTY] No files older than {min_age_days} days.")
+            return
+
+    for path in matches:
+        print(f"[MATCH] {path}")
+
+    if delete:
+        for path in matches:
+            if os.path.isfile(path):
+                try:
+                    os.remove(path)
+                    print(f"[DELETED] {path}")
+                except Exception as e:
+                    print(f"[ERROR] Could not delete {path}: {e}")
+            else:
+                print(f"[SKIPPED] Not a file (probably directory): {path}")
+    else:
+        print("[DRY-RUN] No files deleted.")
+
+
+# -------------------------------------------------------
+# Main script logic
+# -------------------------------------------------------
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Cleanup utility with dry-run and delete modes."
+    )
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Show what would be deleted without deleting.")
+    parser.add_argument("--delete", action="store_true",
+                        help="Delete matched files.")
+    args = parser.parse_args()
+
+    if not args.dry_run and not args.delete:
+        print("ERROR: You must specify --dry-run or --delete")
+        return
+
+    delete_mode = args.delete
+
+    print(f"\nCleanup started: {time.ctime()}")
+    print("Mode:", "DELETE" if delete_mode else "DRY RUN")
+
+    # -----------------------------------
+    # Cross-platform patterns
+    # -----------------------------------
+
+    process(
+        "Incorrect backup folders",
+        os.path.join(OSI_ROOT, "archive", "*"),
+        delete_mode,
+    )
+
+    process(
+        "Old display backups",
+        os.path.join(
+            OSI_ROOT,
+            "monarch",
+            "profiles",
+            "*",
+            "NetworkFolders",
+            "System",
+            "display",
+            "*.zip",
+        ),
+        delete_mode,
+    )
+
+    process(
+        "Old product backups",
+        os.path.join(OSI_ROOT, "archiveosi", "monarch", "products", "*"),
+        delete_mode,
+    )
+
+    process(
+        "Ad-hoc backups (zip files older than 30 days)",
+        os.path.join(OSI_ROOT, "osi_cust", "data", "*.zip"),
+        delete_mode,
+        min_age_days=30,
+    )
+
+    process(
+        "Zip files in monarch root",
+        os.path.join(OSI_ROOT, "monarch", "*.zip"),
+        delete_mode,
+    )
+
+    process(
+        "Zip files in osi_cust root",
+        os.path.join(OSI_ROOT, "osi_cust", "*.zip"),
+        delete_mode,
+    )
+
+    process(
+        "Product backups in wrong dir (old*)",
+        os.path.join(OSI_ROOT, "monarch", "products", "old*", "**", "*.zip"),
+        delete_mode,
+    )
+
+    process(
+        "Product backups in wrong dir (*bkp)",
+        os.path.join(OSI_ROOT, "monarch", "products", "*bkp", "**", "*.zip"),
+        delete_mode,
+    )
+
+    print("\nCleanup complete.")
+
+
+if __name__ == "__main__":
+    main()
